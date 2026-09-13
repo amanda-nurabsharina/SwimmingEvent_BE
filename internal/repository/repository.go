@@ -19,6 +19,10 @@ func NewRepository(db *gorm.DB) *Repository {
 }
 
 func (r *Repository) AutoMigrate() error {
+	// Drop old unique index on registration_code if present, and recreate as regular index to support multiple events per swimmer order
+	_ = r.db.Exec("DROP INDEX IF EXISTS idx_registrations_registration_code").Error
+	_ = r.db.Exec("CREATE INDEX IF NOT EXISTS idx_registrations_registration_code ON registrations(registration_code)").Error
+
 	return r.db.AutoMigrate(
 		&domain.User{},
 		&domain.MasterMenu{},

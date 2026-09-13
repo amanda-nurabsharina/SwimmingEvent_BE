@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/rand"
 	"fmt"
+	"log"
 	"sort"
 
 	"serve-swimming-be/config"
@@ -116,7 +117,9 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 			PaymentProofURL:  req.PaymentProofURL,
 		}
 
-		if err := s.repo.CreateRegistration(&reg); err == nil {
+		if err := s.repo.CreateRegistration(&reg); err != nil {
+			log.Printf("[RegisterParticipant] Failed to insert registration event %d: %v", selection.SwimmingEventID, err)
+		} else {
 			totalEvents++
 		}
 	}

@@ -109,7 +109,7 @@ type Participant struct {
 
 type Registration struct {
 	ID               uint          `gorm:"primaryKey" json:"id"`
-	RegistrationCode string        `gorm:"size:50;uniqueIndex;not null" json:"registration_code"` // e.g. REG-ASC-35552
+	RegistrationCode string        `gorm:"size:50;index;not null" json:"registration_code"` // e.g. REG-ASC-35552
 	ParticipantID    uint          `gorm:"index;not null" json:"participant_id"`
 	Participant      Participant   `gorm:"foreignKey:ParticipantID" json:"participant,omitempty"`
 	SwimmingEventID  uint          `gorm:"index;not null" json:"swimming_event_id"`
