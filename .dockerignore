@@ -1,0 +1,10 @@
+.git
+.gitignore
+.env
+*.exe
+*.db
+*.sqlite
+uploads/*
+!uploads/.gitkeep
+docker-compose.yml
+Dockerfile

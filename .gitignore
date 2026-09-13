@@ -1,0 +1,15 @@
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+server
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.local
+uploads/*
+!uploads/.gitkeep
+.idea/
+.vscode/
