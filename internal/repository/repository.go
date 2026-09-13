@@ -686,7 +686,7 @@ func (r *Repository) CreateRegistration(reg *domain.Registration) error {
 
 func (r *Repository) FindRegistrations() ([]domain.Registration, error) {
 	var regs []domain.Registration
-	err := r.db.Preload("Participant").Preload("SwimmingEvent").Order("id desc").Find(&regs).Error
+	err := r.db.Preload("Participant").Preload("SwimmingEvent").Preload("SwimmingEvent.Tournament").Order("id desc").Find(&regs).Error
 	return regs, err
 }
 
