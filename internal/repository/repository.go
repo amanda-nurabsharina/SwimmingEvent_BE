@@ -641,11 +641,16 @@ func (r *Repository) SeedInitialData() error {
 					ParticipantID:    p.ID,
 					SwimmingEventID:  event.ID,
 					TimeSeed:         sample.TimeSeed,
-					PaymentStatus:    "verified",
+					PaymentStatus:    "pending",
 				}
 				r.db.Create(&reg)
 			}
 		}
+		// Reset sample registrations to pending for admin verification workflow
+		r.db.Model(&domain.Registration{}).Where("payment_status = ?", "verified").Update("payment_status", "pending")
+	} else {
+		// Reset initial seed registrations to pending
+		r.db.Model(&domain.Registration{}).Where("payment_status = ?", "verified").Update("payment_status", "pending")
 	}
 
 	return nil
