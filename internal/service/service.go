@@ -102,8 +102,8 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 	totalEvents := 0
 	for _, selection := range req.EventSelections {
 		timeSeed := selection.TimeSeed
-		if timeSeed == "" {
-			timeSeed = "NT"
+		if timeSeed == "" || timeSeed == "NT" {
+			timeSeed = "99:99.99"
 		}
 
 		reg := domain.Registration{
