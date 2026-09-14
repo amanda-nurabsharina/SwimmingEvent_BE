@@ -34,6 +34,7 @@ func (h *PublicHandler) GetHomepageData(c *fiber.Ctx) error {
 	achSecCfg, _ := h.svc.GetAchievementSectionConfig()
 	testimonials, _ := h.svc.GetTestimonials()
 	testSecCfg, _ := h.svc.GetTestimonialSectionConfig()
+	pageSections, _ := h.svc.GetPageSections("homepage")
 
 	return response.Success(c, fiber.StatusOK, "Homepage data fetched successfully", fiber.Map{
 		"banners":                    banners,
@@ -53,6 +54,7 @@ func (h *PublicHandler) GetHomepageData(c *fiber.Ctx) error {
 		"achievement_section_config": achSecCfg,
 		"testimonials":               testimonials,
 		"testimonial_section_config": testSecCfg,
+		"page_sections":              pageSections,
 	})
 }
 
@@ -118,4 +120,12 @@ func (h *PublicHandler) CheckRegistrationCode(c *fiber.Ctx) error {
 	}
 
 	return response.Success(c, fiber.StatusOK, "Registration details fetched successfully", regs)
+}
+
+func (h *PublicHandler) GetPageSections(c *fiber.Ctx) error {
+	sections, err := h.svc.GetPageSections("homepage")
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch page sections", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Page sections fetched successfully", sections)
 }

@@ -657,6 +657,25 @@ func (r *Repository) SeedInitialData() error {
 		r.db.Model(&domain.Registration{}).Where("payment_status = ?", "verified").Update("payment_status", "pending")
 	}
 
+	// 5. Default Page Sections for Dynamic Landing Page Ordering
+	var sectionCount int64
+	r.db.Model(&domain.PageSection{}).Count(&sectionCount)
+	if sectionCount == 0 {
+		defaultSections := []domain.PageSection{
+			{PageSlug: "homepage", SectionCode: "hero", BadgeText: "BERANDA & HERO", Title: "Banner Utama & Header", Description: "Slider gambar, judul hero, tombol pendaftaran, dan counter statistik", SortOrder: 1, IsPublished: true},
+			{PageSlug: "homepage", SectionCode: "programs", BadgeText: "PROGRAM PELATIHAN", Title: "Program Pelatihan Renang Unggulan", Description: "Pilihan kurikulum renang dari balita hingga kelas prestasi", SortOrder: 2, IsPublished: true},
+			{PageSlug: "homepage", SectionCode: "coaches", BadgeText: "TIM PELATIH", Title: "Tim Kepelatihan Profesional", Description: "Profil pelatih berlisensi FINA / Akuatik Indonesia", SortOrder: 3, IsPublished: true},
+			{PageSlug: "homepage", SectionCode: "facilities", BadgeText: "FASILITAS KOLAM", Title: "Fasilitas Standar Internasional", Description: "Infrastruktur kolam lomba dan sarana latihan pendukung", SortOrder: 4, IsPublished: true},
+			{PageSlug: "homepage", SectionCode: "achievements", BadgeText: "PRESTASI ATLET", Title: "Rekam Jejak Prestasi & Medali", Description: "Pencapaian medali kejuaraan resmi tingkat daerah dan nasional", SortOrder: 5, IsPublished: true},
+			{PageSlug: "homepage", SectionCode: "testimonials", BadgeText: "TESTIMONI", Title: "Kepuasan Orang Tua & Klub", Description: "Ulasan dan testimoni dari wali murid dan perwakilan perkumpulan", SortOrder: 6, IsPublished: true},
+			{PageSlug: "homepage", SectionCode: "events", BadgeText: "NOMOR LOMBA", Title: "Jadwal & Nomor Acara Kejuaraan", Description: "Tabel nomor acara turnamen renang yang sedang dibuka", SortOrder: 7, IsPublished: true},
+			{PageSlug: "homepage", SectionCode: "status_checker", BadgeText: "CEK STATUS", Title: "Cek Status & Validasi Pendaftaran", Description: "Form pelacakan resi pendaftaran peserta secara publik", SortOrder: 8, IsPublished: true},
+		}
+		for _, s := range defaultSections {
+			r.db.Create(&s)
+		}
+	}
+
 	return nil
 }
 
@@ -1012,6 +1031,79 @@ func (r *Repository) SaveEvent(evt *domain.SwimmingEvent) error {
 
 func (r *Repository) DeleteEvent(id uint) error {
 	return r.db.Delete(&domain.SwimmingEvent{}, id).Error
+}
+
+// PageSections DB Methods
+func (r *Repository) FindPageSections(pageSlug string) ([]domain.PageSection, error) {
+	var sections []domain.PageSection
+	if pageSlug == "" {
+		pageSlug = "homepage"
+	}
+	err := r.db.Where("page_slug = ?", pageSlug).Order("sort_order asc").Find(&sections).Error
+	return sections, err
+}
+
+func (r *Repository) SavePageSection(sec *domain.PageSection) error {
+	if sec.ID > 0 {
+		return r.db.Save(sec).Error
+	}
+	return r.db.Create(sec).Error
+}
+
+func (r *Repository) BatchSavePageSections(sections []domain.PageSection) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, s := range sections {
+			if s.ID > 0 {
+				if err := tx.Model(&domain.PageSection{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
+					"sort_order":   s.SortOrder,
+					"is_published": s.IsPublished,
+					"title":        s.Title,
+					"badge_text":   s.BadgeText,
+					"description":  s.Description,
+				}).Error; err != nil {
+					return err
+				}
+			} else if s.SectionCode != "" {
+				if err := tx.Model(&domain.PageSection{}).Where("section_code = ?", s.SectionCode).Updates(map[string]interface{}{
+					"sort_order":   s.SortOrder,
+					"is_published": s.IsPublished,
+					"title":        s.Title,
+					"badge_text":   s.BadgeText,
+					"description":  s.Description,
+				}).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}
+
+func (r *Repository) ResetPageSections(pageSlug string) error {
+	if pageSlug == "" {
+		pageSlug = "homepage"
+	}
+	// Delete existing sections for this page slug
+	if err := r.db.Where("page_slug = ?", pageSlug).Delete(&domain.PageSection{}).Error; err != nil {
+		return err
+	}
+	// Re-insert default sections
+	defaultSections := []domain.PageSection{
+		{PageSlug: pageSlug, SectionCode: "hero", BadgeText: "BERANDA & HERO", Title: "Banner Utama & Header", Description: "Slider gambar, judul hero, tombol pendaftaran, dan counter statistik", SortOrder: 1, IsPublished: true},
+		{PageSlug: pageSlug, SectionCode: "programs", BadgeText: "PROGRAM PELATIHAN", Title: "Program Pelatihan Renang Unggulan", Description: "Pilihan kurikulum renang dari balita hingga kelas prestasi", SortOrder: 2, IsPublished: true},
+		{PageSlug: pageSlug, SectionCode: "coaches", BadgeText: "TIM PELATIH", Title: "Tim Kepelatihan Profesional", Description: "Profil pelatih berlisensi FINA / Akuatik Indonesia", SortOrder: 3, IsPublished: true},
+		{PageSlug: pageSlug, SectionCode: "facilities", BadgeText: "FASILITAS KOLAM", Title: "Fasilitas Standar Internasional", Description: "Infrastruktur kolam lomba dan sarana latihan pendukung", SortOrder: 4, IsPublished: true},
+		{PageSlug: pageSlug, SectionCode: "achievements", BadgeText: "PRESTASI ATLET", Title: "Rekam Jejak Prestasi & Medali", Description: "Pencapaian medali kejuaraan resmi tingkat daerah dan nasional", SortOrder: 5, IsPublished: true},
+		{PageSlug: pageSlug, SectionCode: "testimonials", BadgeText: "TESTIMONI", Title: "Kepuasan Orang Tua & Klub", Description: "Ulasan dan testimoni dari wali murid dan perwakilan perkumpulan", SortOrder: 6, IsPublished: true},
+		{PageSlug: pageSlug, SectionCode: "events", BadgeText: "NOMOR LOMBA", Title: "Jadwal & Nomor Acara Kejuaraan", Description: "Tabel nomor acara turnamen renang yang sedang dibuka", SortOrder: 7, IsPublished: true},
+		{PageSlug: pageSlug, SectionCode: "status_checker", BadgeText: "CEK STATUS", Title: "Cek Status & Validasi Pendaftaran", Description: "Form pelacakan resi pendaftaran peserta secara publik", SortOrder: 8, IsPublished: true},
+	}
+	for _, s := range defaultSections {
+		if err := r.db.Create(&s).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 

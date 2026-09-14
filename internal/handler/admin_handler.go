@@ -566,6 +566,63 @@ func (h *AdminHandler) DeleteTournament(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "Tournament deleted successfully", nil)
 }
 
+// Page Sections CMS Handlers
+func (h *AdminHandler) GetPageSections(c *fiber.Ctx) error {
+	slug := c.Query("page_slug", "homepage")
+	sections, err := h.svc.GetPageSections(slug)
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch page sections", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Page sections fetched successfully", sections)
+}
+
+func (h *AdminHandler) SavePageSection(c *fiber.Ctx) error {
+	var sec domain.PageSection
+	if err := c.BodyParser(&sec); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+
+	if err := h.svc.SavePageSection(&sec); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to save page section", err.Error())
+	}
+
+	return response.Success(c, fiber.StatusOK, "Page section saved successfully", sec)
+}
+
+func (h *AdminHandler) BatchSavePageSections(c *fiber.Ctx) error {
+	var req struct {
+		Sections []domain.PageSection `json:"sections"`
+	}
+
+	// Support either array directly or { sections: [...] }
+	if err := c.BodyParser(&req); err != nil || len(req.Sections) == 0 {
+		var directArr []domain.PageSection
+		if err2 := c.BodyParser(&directArr); err2 == nil && len(directArr) > 0 {
+			req.Sections = directArr
+		}
+	}
+
+	if len(req.Sections) == 0 {
+		return response.Error(c, fiber.StatusBadRequest, "No sections provided", nil)
+	}
+
+	if err := h.svc.BatchSavePageSections(req.Sections); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to batch save page sections", err.Error())
+	}
+
+	allSections, _ := h.svc.GetPageSections("homepage")
+	return response.Success(c, fiber.StatusOK, "Batch page sections saved successfully", allSections)
+}
+
+func (h *AdminHandler) ResetPageSections(c *fiber.Ctx) error {
+	slug := c.Query("page_slug", "homepage")
+	if err := h.svc.ResetPageSections(slug); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to reset page sections", err.Error())
+	}
+	allSections, _ := h.svc.GetPageSections(slug)
+	return response.Success(c, fiber.StatusOK, "Page sections reset to default successfully", allSections)
+}
+
 
 
 

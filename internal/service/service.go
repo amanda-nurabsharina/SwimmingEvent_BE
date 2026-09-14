@@ -418,6 +418,31 @@ func (s *Service) DeleteTournament(id uint) error {
 	return s.repo.DeleteTournament(id)
 }
 
+// Page Sections (Landing Page Dynamic Ordering)
+func (s *Service) GetPageSections(pageSlug ...string) ([]domain.PageSection, error) {
+	slug := "homepage"
+	if len(pageSlug) > 0 && pageSlug[0] != "" {
+		slug = pageSlug[0]
+	}
+	return s.repo.FindPageSections(slug)
+}
+
+func (s *Service) SavePageSection(sec *domain.PageSection) error {
+	return s.repo.SavePageSection(sec)
+}
+
+func (s *Service) BatchSavePageSections(sections []domain.PageSection) error {
+	return s.repo.BatchSavePageSections(sections)
+}
+
+func (s *Service) ResetPageSections(pageSlug ...string) error {
+	slug := "homepage"
+	if len(pageSlug) > 0 && pageSlug[0] != "" {
+		slug = pageSlug[0]
+	}
+	return s.repo.ResetPageSections(slug)
+}
+
 
 
 
