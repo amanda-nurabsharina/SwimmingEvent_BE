@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"serve-swimming-be/internal/domain"
 	"serve-swimming-be/pkg/security"
@@ -24,6 +25,7 @@ func (r *Repository) AutoMigrate() error {
 	_ = r.db.Exec("CREATE INDEX IF NOT EXISTS idx_registrations_registration_code ON registrations(registration_code)").Error
 
 	return r.db.AutoMigrate(
+		&domain.Role{},
 		&domain.User{},
 		&domain.MasterMenu{},
 		&domain.BannerSlide{},
@@ -36,6 +38,7 @@ func (r *Repository) AutoMigrate() error {
 		&domain.HeroConfig{},
 		&domain.HeroStat{},
 		&domain.AuditLog{},
+		&domain.RaceResultLog{},
 		&domain.SiteConfig{},
 		&domain.TrainingProgram{},
 		&domain.ProgramSectionConfig{},
@@ -55,20 +58,48 @@ func (r *Repository) SeedInitialData() error {
 		return err
 	}
 
+	// 0. Default Super Admin Role
+	var superAdminRole domain.Role
+	if err := r.db.Where("name = ?", "Super Admin").First(&superAdminRole).Error; err != nil {
+		superAdminRole = domain.Role{
+			Name:        "Super Admin",
+			Description: "Role sistem dengan hak akses penuh ke seluruh modul & pengaturan",
+			Permissions: `["*"]`,
+			IsSystem:    true,
+		}
+		if err := r.db.Create(&superAdminRole).Error; err != nil {
+			log.Printf("Error seeding Super Admin role: %v", err)
+		}
+	} else if !superAdminRole.IsSystem {
+		r.db.Model(&superAdminRole).Update("is_system", true)
+	}
+
 	// 1. Default Admin User
 	var userCount int64
 	r.db.Model(&domain.User{}).Count(&userCount)
 	if userCount == 0 {
 		hashedPassword, _ := security.HashPassword("admin123")
+		roleID := superAdminRole.ID
 		admin := domain.User{
 			Username:     "admin",
 			Email:        "admin@akuatik-tangerang.id",
 			PasswordHash: hashedPassword,
-			Role:         "ADMIN",
+			RoleID:       &roleID,
+			Role:         "Super Admin",
 			Status:       "active",
 		}
 		if err := r.db.Create(&admin).Error; err != nil {
 			log.Printf("Error seeding admin: %v", err)
+		}
+	} else {
+		var adminUser domain.User
+		if err := r.db.Where("username = ?", "admin").First(&adminUser).Error; err == nil {
+			if adminUser.RoleID == nil || *adminUser.RoleID == 0 {
+				r.db.Model(&adminUser).Updates(map[string]interface{}{
+					"role_id": superAdminRole.ID,
+					"role":    "Super Admin",
+				})
+			}
 		}
 	}
 
@@ -645,16 +676,11 @@ func (r *Repository) SeedInitialData() error {
 					ParticipantID:    p.ID,
 					SwimmingEventID:  event.ID,
 					TimeSeed:         sample.TimeSeed,
-					PaymentStatus:    "pending",
+					PaymentStatus:    "verified",
 				}
 				r.db.Create(&reg)
 			}
 		}
-		// Reset sample registrations to pending for admin verification workflow
-		r.db.Model(&domain.Registration{}).Where("payment_status = ?", "verified").Update("payment_status", "pending")
-	} else {
-		// Reset initial seed registrations to pending
-		r.db.Model(&domain.Registration{}).Where("payment_status = ?", "verified").Update("payment_status", "pending")
 	}
 
 	// 5. Default Page Sections for Dynamic Landing Page Ordering
@@ -682,7 +708,7 @@ func (r *Repository) SeedInitialData() error {
 // Database Query Methods
 func (r *Repository) FindUserByUsername(username string) (*domain.User, error) {
 	var user domain.User
-	err := r.db.Where("username = ?", username).First(&user).Error
+	err := r.db.Preload("RoleRel").Where("username = ?", username).First(&user).Error
 	return &user, err
 }
 
@@ -745,11 +771,105 @@ func (r *Repository) UpdateRegistrationHeatLine(id uint, heat, line int) error {
 	}).Error
 }
 
+func (r *Repository) FindRegistrationByID(id uint) (*domain.Registration, error) {
+	var reg domain.Registration
+	err := r.db.Preload("Participant").Preload("SwimmingEvent").First(&reg, id).Error
+	return &reg, err
+}
+
+func (r *Repository) FindOccupiedRegistration(eventID uint, heat, line int, excludeID uint) (*domain.Registration, error) {
+	var reg domain.Registration
+	err := r.db.Preload("Participant").Preload("SwimmingEvent").
+		Where("swimming_event_id = ? AND heat_number = ? AND line_number = ? AND id != ?", eventID, heat, line, excludeID).
+		First(&reg).Error
+	return &reg, err
+}
+
+func (r *Repository) FindTournamentByID(id uint) (*domain.Tournament, error) {
+	var t domain.Tournament
+	err := r.db.Preload("Events").First(&t, id).Error
+	return &t, err
+}
+
+func (r *Repository) SetTournamentBukuAcaraLock(tournamentID uint, isLocked bool) error {
+	return r.db.Model(&domain.Tournament{}).Where("id = ?", tournamentID).Update("is_buku_acara_locked", isLocked).Error
+}
+
+func (r *Repository) SetTournamentBukuAcaraPublish(tournamentID uint, isPublished bool) error {
+	return r.db.Model(&domain.Tournament{}).Where("id = ?", tournamentID).Update("is_buku_acara_published", isPublished).Error
+}
+
+func (r *Repository) ResetAllHeatLines() error {
+	return r.db.Model(&domain.Registration{}).Where("id > 0").Updates(map[string]interface{}{
+		"heat_number": 0,
+		"line_number": 0,
+	}).Error
+}
+
+func (r *Repository) ResetTournamentHeatLines(tournamentID uint) error {
+	if tournamentID > 0 {
+		return r.db.Exec(`
+			UPDATE registrations 
+			SET heat_number = 0, line_number = 0 
+			WHERE swimming_event_id IN (SELECT id FROM swimming_events WHERE tournament_id = ?)
+		`, tournamentID).Error
+	}
+	return r.ResetAllHeatLines()
+}
+
+func (r *Repository) FindVerifiedRegistrations() ([]domain.Registration, error) {
+	var regs []domain.Registration
+	err := r.db.Preload("Participant").Preload("SwimmingEvent").Preload("SwimmingEvent.Tournament").
+		Where("LOWER(payment_status) = ?", "verified").
+		Find(&regs).Error
+	return regs, err
+}
+
 func (r *Repository) UpdateRaceResult(id uint, timeStr string, rank int) error {
 	return r.db.Model(&domain.Registration{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"race_result_time": timeStr,
 		"rank":             rank,
 	}).Error
+}
+
+func (r *Repository) UpdateFinalRaceResult(id uint, timeStr string, rank int) error {
+	return r.db.Model(&domain.Registration{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"final_result_time": timeStr,
+		"final_rank":        rank,
+	}).Error
+}
+
+func (r *Repository) UpdateRegistrationFinalHeatLine(id uint, heat, line int) error {
+	return r.db.Model(&domain.Registration{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"final_heat_number": heat,
+		"final_line_number": line,
+		"is_finalist":       heat > 0 && line > 0,
+	}).Error
+}
+
+func (r *Repository) ResetTournamentFinalHeatLines(tournamentID uint) error {
+	if tournamentID > 0 {
+		return r.db.Exec(`
+			UPDATE registrations 
+			SET final_heat_number = 0, final_line_number = 0, is_finalist = false, final_result_time = '', final_rank = 0
+			WHERE swimming_event_id IN (SELECT id FROM swimming_events WHERE tournament_id = ?)
+		`, tournamentID).Error
+	}
+	return r.db.Model(&domain.Registration{}).Where("id > 0").Updates(map[string]interface{}{
+		"final_heat_number": 0,
+		"final_line_number": 0,
+		"is_finalist":       false,
+		"final_result_time": "",
+		"final_rank":        0,
+	}).Error
+}
+
+func (r *Repository) FindOccupiedFinalRegistration(eventID uint, heat, line int, excludeID uint) (*domain.Registration, error) {
+	var reg domain.Registration
+	err := r.db.Preload("Participant").Preload("SwimmingEvent").
+		Where("swimming_event_id = ? AND final_heat_number = ? AND final_line_number = ? AND id != ?", eventID, heat, line, excludeID).
+		First(&reg).Error
+	return &reg, err
 }
 
 func (r *Repository) SaveBanner(banner *domain.BannerSlide) error {
@@ -1105,6 +1225,146 @@ func (r *Repository) ResetPageSections(pageSlug string) error {
 	}
 	return nil
 }
+
+// ----------------------------------------------------
+// RACE RESULT AUDIT LOG METHODS
+// ----------------------------------------------------
+
+func (r *Repository) CreateRaceResultLog(log *domain.RaceResultLog) error {
+	return r.db.Create(log).Error
+}
+
+func (r *Repository) FindRaceResultLogs(tournamentID uint, round string, action string, search string, limit, offset int) ([]domain.RaceResultLog, int64, error) {
+	var logs []domain.RaceResultLog
+	var total int64
+
+	query := r.db.Model(&domain.RaceResultLog{})
+
+	if tournamentID > 0 {
+		query = query.Where("tournament_id = ?", tournamentID)
+	}
+	if round != "" && round != "ALL" {
+		query = query.Where("LOWER(round) = ?", strings.ToLower(round))
+	}
+	if action != "" && action != "ALL" {
+		query = query.Where("action = ?", action)
+	}
+	if strings.TrimSpace(search) != "" {
+		like := "%" + strings.ToLower(strings.TrimSpace(search)) + "%"
+		query = query.Where("LOWER(swimmer_name) LIKE ? OR LOWER(club_name) LIKE ? OR LOWER(event_name) LIKE ? OR LOWER(operator_name) LIKE ? OR LOWER(notes) LIKE ?",
+			like, like, like, like, like)
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	err := query.Order("created_at DESC, id DESC").Limit(limit).Offset(offset).Find(&logs).Error
+	return logs, total, err
+}
+
+func (r *Repository) GetRaceResultLogStats(tournamentID uint) (map[string]interface{}, error) {
+	var totalLogs, totalCreate, totalUpdate, totalDelete, totalSwap int64
+
+	baseQuery := r.db.Model(&domain.RaceResultLog{})
+	if tournamentID > 0 {
+		baseQuery = baseQuery.Where("tournament_id = ?", tournamentID)
+	}
+
+	baseQuery.Count(&totalLogs)
+
+	qCreate := r.db.Model(&domain.RaceResultLog{}).Where("action = ?", "CREATE")
+	qUpdate := r.db.Model(&domain.RaceResultLog{}).Where("action = ?", "UPDATE")
+	qDelete := r.db.Model(&domain.RaceResultLog{}).Where("action = ?", "DELETE")
+	qSwap := r.db.Model(&domain.RaceResultLog{}).Where("action IN (?)", []string{"SWAP", "MOVE"})
+
+	if tournamentID > 0 {
+		qCreate = qCreate.Where("tournament_id = ?", tournamentID)
+		qUpdate = qUpdate.Where("tournament_id = ?", tournamentID)
+		qDelete = qDelete.Where("tournament_id = ?", tournamentID)
+		qSwap = qSwap.Where("tournament_id = ?", tournamentID)
+	}
+
+	qCreate.Count(&totalCreate)
+	qUpdate.Count(&totalUpdate)
+	qDelete.Count(&totalDelete)
+	qSwap.Count(&totalSwap)
+
+	return map[string]interface{}{
+		"total_logs":   totalLogs,
+		"total_create": totalCreate,
+		"total_update": totalUpdate,
+		"total_delete": totalDelete,
+		"total_swap":   totalSwap,
+	}, nil
+}
+
+// --------------------------------------------------------------------------
+// ROLE & USER MANAGEMENT REPOSITORY METHODS
+// --------------------------------------------------------------------------
+
+func (r *Repository) FindRoles() ([]domain.Role, error) {
+	var roles []domain.Role
+	err := r.db.Order("is_system desc, id asc").Find(&roles).Error
+	return roles, err
+}
+
+func (r *Repository) FindRoleByID(id uint) (*domain.Role, error) {
+	var role domain.Role
+	err := r.db.First(&role, id).Error
+	return &role, err
+}
+
+func (r *Repository) CreateRole(role *domain.Role) error {
+	return r.db.Create(role).Error
+}
+
+func (r *Repository) UpdateRole(role *domain.Role) error {
+	return r.db.Save(role).Error
+}
+
+func (r *Repository) DeleteRole(id uint) error {
+	return r.db.Delete(&domain.Role{}, id).Error
+}
+
+func (r *Repository) CountUsersByRoleID(roleID uint) (int64, error) {
+	var count int64
+	err := r.db.Model(&domain.User{}).Where("role_id = ?", roleID).Count(&count).Error
+	return count, err
+}
+
+func (r *Repository) FindUsers() ([]domain.User, error) {
+	var users []domain.User
+	err := r.db.Preload("RoleRel").Order("id asc").Find(&users).Error
+	return users, err
+}
+
+func (r *Repository) FindUserByID(id uint) (*domain.User, error) {
+	var user domain.User
+	err := r.db.Preload("RoleRel").First(&user, id).Error
+	return &user, err
+}
+
+func (r *Repository) CreateUser(user *domain.User) error {
+	return r.db.Create(user).Error
+}
+
+func (r *Repository) UpdateUser(user *domain.User) error {
+	return r.db.Save(user).Error
+}
+
+func (r *Repository) DeleteUser(id uint) error {
+	return r.db.Delete(&domain.User{}, id).Error
+}
+
+
 
 
 

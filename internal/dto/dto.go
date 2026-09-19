@@ -11,10 +11,56 @@ type LoginResponse struct {
 }
 
 type UserSummary struct {
-	ID       uint   `json:"id"`
+	ID          uint     `json:"id"`
+	Username    string   `json:"username"`
+	Email       string   `json:"email"`
+	Role        string   `json:"role"`
+	RoleID      *uint    `json:"role_id,omitempty"`
+	Permissions []string `json:"permissions,omitempty"`
+}
+
+type RoleRequest struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+}
+
+type RoleResponse struct {
+	ID          uint     `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Permissions []string `json:"permissions"`
+	IsSystem    bool     `json:"is_system"`
+	UsersCount  int      `json:"users_count"`
+	CreatedAt   string   `json:"created_at"`
+	UpdatedAt   string   `json:"updated_at"`
+}
+
+type UserCreateRequest struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
-	Role     string `json:"role"`
+	Password string `json:"password"`
+	RoleID   uint   `json:"role_id"`
+	Status   string `json:"status"`
+}
+
+type UserUpdateRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password,omitempty"`
+	RoleID   uint   `json:"role_id"`
+	Status   string `json:"status"`
+}
+
+type UserDetailResponse struct {
+	ID        uint          `json:"id"`
+	Username  string        `json:"username"`
+	Email     string        `json:"email"`
+	RoleID    *uint         `json:"role_id"`
+	RoleName  string        `json:"role_name"`
+	Role      *RoleResponse `json:"role,omitempty"`
+	Status    string        `json:"status"`
+	CreatedAt string        `json:"created_at"`
+	UpdatedAt string        `json:"updated_at"`
 }
 
 type RegisterParticipantRequest struct {
@@ -52,12 +98,38 @@ type VerificationRequest struct {
 }
 
 type GenerateBukuAcaraRequest struct {
-	MaxLanes int `json:"max_lanes"` // 3, 6, 8, 10 lines
+	MaxLanes     int  `json:"max_lanes"` // 3, 6, 8, 10 lines
+	TournamentID uint `json:"tournament_id"`
+	Force        bool `json:"force"` // Force regenerate even if locked
 }
 
 type RecordResultRequest struct {
 	RaceResultTime string `json:"race_result_time"` // mm.ss.ms
+	FinalTime      string `json:"final_time"`       // alias for frontend flexibility
+	Status         string `json:"status"`           // OK, DQ, DNF, DNS
 	Rank           int    `json:"rank"`
+	Round          string `json:"round"`            // "preliminary" or "final"
+}
+
+type SwapHeatLineRequest struct {
+	TargetHeat     int    `json:"target_heat"`
+	TargetLine     int    `json:"target_line"`
+	SwapIfOccupied bool   `json:"swap_if_occupied"`
+	Round          string `json:"round"` // "preliminary" or "final"
+}
+
+type LockBukuAcaraRequest struct {
+	IsLocked bool `json:"is_locked"`
+}
+
+type PublishBukuAcaraRequest struct {
+	IsPublished bool `json:"is_published"`
+}
+
+type GenerateFinalRoundRequest struct {
+	TournamentID uint   `json:"tournament_id"`
+	MaxLanes     int    `json:"max_lanes"`
+	QualifyMode  string `json:"qualify_mode"` // "heat_winners_and_fastest" or "top_fastest"
 }
 
 type StartingItemDTO struct {
@@ -72,20 +144,37 @@ type StartingItemDTO struct {
 }
 
 type BukuAcaraHeatItemDTO struct {
-	Heat     int    `json:"heat"`
-	Line     int    `json:"line"`
-	Nama     string `json:"nama"`
-	Gender   string `json:"jenis_kelamin"`
-	Club     string `json:"club"`
-	TimeSeed string `json:"time_seed"`
-	Result   string `json:"result"`
+	RegistrationID    uint   `json:"registration_id,omitempty"`
+	Heat              int    `json:"heat"`
+	HeatLabel         string `json:"heat_label,omitempty"`
+	HeatCategory      string `json:"heat_category,omitempty"`
+	Line              int    `json:"line"`
+	Nama              string `json:"nama"`
+	Gender            string `json:"jenis_kelamin"`
+	Club              string `json:"club"`
+	TimeSeed          string `json:"time_seed"`
+	Result            string `json:"result"`
+	Rank              int    `json:"rank,omitempty"`
+	IsEmpty           bool   `json:"is_empty"`
+	IsFinalist        bool   `json:"is_finalist"`
+	PreliminaryResult string `json:"preliminary_result,omitempty"`
+	PreliminaryRank   int    `json:"preliminary_rank,omitempty"`
 }
 
 type BukuAcaraEventGroupDTO struct {
-	EventCode int                    `json:"event_code"`
-	EventName string                 `json:"event_name"`
-	Gender    string                 `json:"gender"`
-	Heats     []BukuAcaraHeatItemDTO `json:"heats"`
+	EventID      uint                   `json:"event_id"`
+	TournamentID uint                   `json:"tournament_id"`
+	EventCode    int                    `json:"event_code"`
+	EventName    string                 `json:"event_name"`
+	Distance     string                 `json:"distance"`
+	Stroke       string                 `json:"stroke"`
+	Gender       string                 `json:"gender"`
+	AgeGroup     string                 `json:"age_group"`
+	HeatCategory string                 `json:"heat_category"`
+	MaxLanes     int                    `json:"max_lanes"`
+	Round        string                 `json:"round"`
+	HasFinalists bool                   `json:"has_finalists"`
+	Heats        []BukuAcaraHeatItemDTO `json:"heats"`
 }
 
 type SaveTournamentRequest struct {
@@ -98,4 +187,6 @@ type SaveTournamentRequest struct {
 	EventStartDate        string `json:"event_start_date"`
 	EventEndDate          string `json:"event_end_date"`
 	IsActive              bool   `json:"is_active"`
+	IsBukuAcaraLocked     bool   `json:"is_buku_acara_locked"`
+	IsBukuAcaraPublished  bool   `json:"is_buku_acara_published"`
 }

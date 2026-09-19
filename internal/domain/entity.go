@@ -4,12 +4,24 @@ import (
 	"time"
 )
 
+type Role struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	Name        string    `gorm:"size:100;uniqueIndex;not null" json:"name"`
+	Description string    `gorm:"size:255" json:"description"`
+	Permissions string    `gorm:"type:text;not null" json:"permissions"` // JSON array string e.g. ["*"] or ["dashboard","results"]
+	IsSystem    bool      `gorm:"default:false" json:"is_system"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 type User struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	Username     string    `gorm:"size:100;uniqueIndex;not null" json:"username"`
 	Email        string    `gorm:"size:150;uniqueIndex;not null" json:"email"`
 	PasswordHash string    `gorm:"size:255;not null" json:"-"`
-	Role         string    `gorm:"size:50;default:'ADMIN'" json:"role"`
+	RoleID       *uint     `gorm:"index" json:"role_id,omitempty"`
+	RoleRel      *Role     `gorm:"foreignKey:RoleID" json:"role_rel,omitempty"`
+	Role         string    `gorm:"size:50;default:'Super Admin'" json:"role"`
 	Status       string    `gorm:"size:20;default:'active'" json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -69,6 +81,8 @@ type Tournament struct {
 	EventStartDate        string          `gorm:"size:50" json:"event_start_date"`        // YYYY-MM-DD
 	EventEndDate          string          `gorm:"size:50" json:"event_end_date"`          // YYYY-MM-DD
 	IsActive              bool            `gorm:"default:true" json:"is_active"`
+	IsBukuAcaraLocked     bool            `gorm:"default:false" json:"is_buku_acara_locked"`
+	IsBukuAcaraPublished  bool            `gorm:"default:false" json:"is_buku_acara_published"`
 	Events                []SwimmingEvent `gorm:"foreignKey:TournamentID" json:"events,omitempty"`
 	CreatedAt             time.Time       `json:"created_at"`
 	UpdatedAt             time.Time       `json:"updated_at"`
@@ -86,6 +100,7 @@ type SwimmingEvent struct {
 	AgeGroup     string      `gorm:"size:50;default:'OPEN'" json:"age_group"` // KU 4, KU 3, KU 2, KU 1, Senior, OPEN
 	Fee          float64     `gorm:"default:150000" json:"fee"`
 	ScheduleTime string      `gorm:"size:100;default:'08:00 WIB'" json:"schedule_time"`
+	HeatCategory string      `gorm:"size:50;default:'HEAT'" json:"heat_category"` // "HEAT" or "GROUP"
 	IsActive     bool        `gorm:"default:true" json:"is_active"`
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
@@ -121,8 +136,13 @@ type Registration struct {
 	PaymentMethod    string        `gorm:"size:100;default:'Transfer Bank BCA'" json:"payment_method"`
 	SenderBankOwner  string        `gorm:"size:255" json:"sender_bank_owner"`
 	PaymentProofURL  string        `gorm:"type:text" json:"payment_proof_url"`
-	RaceResultTime   string        `gorm:"size:50" json:"race_result_time"` // Catatan waktu hasil lomba
-	Rank             int           `gorm:"default:0" json:"rank"`            // Juara 1, 2, 3...
+	RaceResultTime   string        `gorm:"size:50" json:"race_result_time"` // Catatan waktu hasil lomba putaran awal
+	Rank             int           `gorm:"default:0" json:"rank"`            // Juara heat / peringkat putaran awal
+	FinalHeatNumber  int           `gorm:"default:0" json:"final_heat_number"` // Nomor Seri di Babak Final
+	FinalLineNumber  int           `gorm:"default:0" json:"final_line_number"` // Nomor Lintasan di Babak Final
+	FinalResultTime  string        `gorm:"size:50" json:"final_result_time"`   // Catatan waktu hasil babak final
+	FinalRank        int           `gorm:"default:0" json:"final_rank"`          // Juara 1, 2, 3 akhir babak final
+	IsFinalist       bool          `gorm:"default:false" json:"is_finalist"`   // Apakah lolos ke babak final
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 }
@@ -176,6 +196,26 @@ type AuditLog struct {
 	IPAddress string    `gorm:"size:45" json:"ip_address"`
 	UserAgent string    `gorm:"type:text" json:"user_agent"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type RaceResultLog struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	TournamentID   uint      `gorm:"index" json:"tournament_id"`
+	RegistrationID uint      `gorm:"index" json:"registration_id"`
+	SwimmerName    string    `gorm:"size:255" json:"swimmer_name"`
+	ClubName       string    `gorm:"size:255" json:"club_name"`
+	EventCode      int       `json:"event_code"`
+	EventName      string    `gorm:"size:255" json:"event_name"`
+	Round          string    `gorm:"size:50" json:"round"` // preliminary / final
+	HeatNumber     int       `json:"heat_number"`
+	LineNumber     int       `json:"line_number"`
+	Action         string    `gorm:"size:50;not null" json:"action"` // CREATE, UPDATE, DELETE, SWAP, MOVE, GENERATE_FINAL, LOCK, UNLOCK, PUBLISH, UNPUBLISH
+	OldValue       string    `gorm:"type:text" json:"old_value"`
+	NewValue       string    `gorm:"type:text" json:"new_value"`
+	OperatorName   string    `gorm:"size:150" json:"operator_name"`
+	Notes          string    `gorm:"type:text" json:"notes"`
+	IPAddress      string    `gorm:"size:50" json:"ip_address"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type SiteConfig struct {

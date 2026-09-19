@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strconv"
+
 	"serve-swimming-be/internal/dto"
 	"serve-swimming-be/internal/service"
 	"serve-swimming-be/pkg/response"
@@ -101,7 +103,10 @@ func (h *PublicHandler) GetStartingList(c *fiber.Ctx) error {
 }
 
 func (h *PublicHandler) GetBukuAcara(c *fiber.Ctx) error {
-	bukuAcara, err := h.svc.GetBukuAcara()
+	tourneyIDStr := c.Query("tournament_id")
+	tourneyID, _ := strconv.ParseUint(tourneyIDStr, 10, 64)
+	round := c.Query("round")
+	bukuAcara, err := h.svc.GetBukuAcara(uint(tourneyID), round)
 	if err != nil {
 		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch buku acara", err.Error())
 	}

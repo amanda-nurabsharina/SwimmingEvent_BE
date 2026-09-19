@@ -86,11 +86,18 @@ func main() {
 	admin.Get("/registrations", adminHandler.GetRegistrations)
 	admin.Put("/registrations/:id/verify", adminHandler.VerifyPayment)
 	admin.Post("/buku-acara/generate", adminHandler.GenerateBukuAcara)
+	admin.Post("/buku-acara/generate-final", adminHandler.GenerateFinalRound)
+	admin.Get("/buku-acara", publicHandler.GetBukuAcara)
 	admin.Put("/registrations/:id/result", adminHandler.RecordRaceResult)
+	admin.Put("/registrations/:id/heat-line", adminHandler.SwapRegistrationHeatLine)
+	admin.Get("/race-results/logs", adminHandler.GetRaceResultLogs)
+	admin.Get("/race-results/logs/stats", adminHandler.GetRaceResultLogStats)
 
 	// Tournament Master CMS
 	admin.Get("/tournaments", adminHandler.GetTournaments)
 	admin.Post("/tournaments", adminHandler.SaveTournament)
+	admin.Put("/tournaments/:id/lock-buku-acara", adminHandler.LockTournamentBukuAcara)
+	admin.Put("/tournaments/:id/publish-buku-acara", adminHandler.PublishTournamentBukuAcara)
 	admin.Delete("/tournaments/:id", adminHandler.DeleteTournament)
 
 	// Banner & Hero CMS
@@ -150,6 +157,18 @@ func main() {
 	admin.Post("/page-sections", adminHandler.SavePageSection)
 	admin.Post("/page-sections/batch", adminHandler.BatchSavePageSections)
 	admin.Post("/page-sections/reset", adminHandler.ResetPageSections)
+
+	// Role & Permission CMS
+	admin.Get("/roles", adminHandler.GetRoles)
+	admin.Post("/roles", adminHandler.CreateRole)
+	admin.Put("/roles/:id", adminHandler.UpdateRole)
+	admin.Delete("/roles/:id", adminHandler.DeleteRole)
+
+	// User Management CMS
+	admin.Get("/users", adminHandler.GetUsers)
+	admin.Post("/users", adminHandler.CreateUser)
+	admin.Put("/users/:id", adminHandler.UpdateUser)
+	admin.Delete("/users/:id", adminHandler.DeleteUser)
 
 	log.Printf("Swimming Event API starting on port :%s in %s mode...", cfg.Port, cfg.AppEnv)
 	if err := app.Listen(":" + cfg.Port); err != nil {

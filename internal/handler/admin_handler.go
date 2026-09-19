@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 
 	"serve-swimming-be/config"
 	"serve-swimming-be/internal/domain"
@@ -55,8 +57,8 @@ func (h *AdminHandler) VerifyPayment(c *fiber.Ctx) error {
 		return response.Error(c, fiber.StatusBadRequest, "Invalid verification request payload", err.Error())
 	}
 
-	if req.PaymentStatus != "verified" && req.PaymentStatus != "rejected" {
-		return response.Error(c, fiber.StatusBadRequest, "Status must be 'verified' or 'rejected'", nil)
+	if req.PaymentStatus != "verified" && req.PaymentStatus != "rejected" && req.PaymentStatus != "pending" {
+		return response.Error(c, fiber.StatusBadRequest, "Status must be 'verified', 'pending', or 'rejected'", nil)
 	}
 
 	if err := h.svc.VerifyPayment(uint(id), req.PaymentStatus); err != nil {
@@ -73,12 +75,40 @@ func (h *AdminHandler) GenerateBukuAcara(c *fiber.Ctx) error {
 		req.MaxLanes = 3
 	}
 
-	if err := h.svc.GenerateBukuAcara(req.MaxLanes); err != nil {
-		return response.Error(c, fiber.StatusInternalServerError, "Failed to generate buku acara", err.Error())
+	if err := h.svc.GenerateBukuAcara(req.MaxLanes, req.TournamentID, req.Force); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
 	}
 
-	bukuAcara, _ := h.svc.GetBukuAcara()
+	bukuAcara, _ := h.svc.GetBukuAcara(req.TournamentID, "preliminary")
 	return response.Success(c, fiber.StatusOK, "Buku acara generated successfully", bukuAcara)
+}
+
+func (h *AdminHandler) GetBukuAcara(c *fiber.Ctx) error {
+	tourneyIDStr := c.Query("tournament_id")
+	tourneyID, _ := strconv.ParseUint(tourneyIDStr, 10, 64)
+	round := c.Query("round")
+	bukuAcara, err := h.svc.GetBukuAcara(uint(tourneyID), round)
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch buku acara", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Buku acara fetched successfully", bukuAcara)
+}
+
+func (h *AdminHandler) GenerateFinalRound(c *fiber.Ctx) error {
+	var req dto.GenerateFinalRoundRequest
+	_ = c.BodyParser(&req)
+
+	operator, _ := c.Locals("username").(string)
+	if operator == "" {
+		operator = "Admin Panitia"
+	}
+	ip := c.IP()
+
+	if err := h.svc.GenerateFinalRound(req.TournamentID, req.MaxLanes, req.QualifyMode, operator, ip); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	bukuAcara, _ := h.svc.GetBukuAcara(req.TournamentID, "final")
+	return response.Success(c, fiber.StatusOK, "Bagan babak final berhasil di-generate berdasarkan juara heat", bukuAcara)
 }
 
 func (h *AdminHandler) RecordRaceResult(c *fiber.Ctx) error {
@@ -93,11 +123,177 @@ func (h *AdminHandler) RecordRaceResult(c *fiber.Ctx) error {
 		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
 	}
 
-	if err := h.svc.RecordRaceResult(uint(id), req.RaceResultTime, req.Rank); err != nil {
-		return response.Error(c, fiber.StatusInternalServerError, "Failed to record race result", err.Error())
+	timeResult := req.RaceResultTime
+	if timeResult == "" {
+		timeResult = req.FinalTime
+	}
+	if req.Status != "" && req.Status != "OK" {
+		if timeResult == "" {
+			timeResult = req.Status
+		} else {
+			timeResult = fmt.Sprintf("%s (%s)", timeResult, req.Status)
+		}
+	}
+
+	operator, _ := c.Locals("username").(string)
+	if operator == "" {
+		operator = "Admin Panitia"
+	}
+	ip := c.IP()
+
+	if err := h.svc.RecordRaceResult(uint(id), timeResult, req.Rank, req.Round, operator, ip); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
 	}
 
 	return response.Success(c, fiber.StatusOK, "Race result recorded successfully", nil)
+}
+
+func (h *AdminHandler) LockTournamentBukuAcara(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid tournament ID", nil)
+	}
+
+	var req dto.LockBukuAcaraRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+
+	operator, _ := c.Locals("username").(string)
+	if operator == "" {
+		operator = "Admin Panitia"
+	}
+	ip := c.IP()
+
+	if err := h.svc.SetTournamentBukuAcaraLock(uint(id), req.IsLocked, operator, ip); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to update lock status", err.Error())
+	}
+
+	msg := "Buku acara berhasil dipatenkan/dikunci"
+	if !req.IsLocked {
+		msg = "Kunci buku acara berhasil dibuka"
+	}
+	return response.Success(c, fiber.StatusOK, msg, fiber.Map{
+		"tournament_id": id,
+		"is_locked":     req.IsLocked,
+	})
+}
+
+func (h *AdminHandler) PublishTournamentBukuAcara(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid tournament ID", nil)
+	}
+
+	var req dto.PublishBukuAcaraRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+
+	operator, _ := c.Locals("username").(string)
+	if operator == "" {
+		operator = "Admin Panitia"
+	}
+	ip := c.IP()
+
+	if err := h.svc.SetTournamentBukuAcaraPublish(uint(id), req.IsPublished, operator, ip); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to update publication status", err.Error())
+	}
+
+	msg := "Buku acara berhasil dipublikasikan ke halaman publik"
+	if !req.IsPublished {
+		msg = "Publikasi buku acara berhasil ditarik dari halaman publik"
+	}
+	return response.Success(c, fiber.StatusOK, msg, fiber.Map{
+		"tournament_id": id,
+		"is_published":  req.IsPublished,
+	})
+}
+
+func (h *AdminHandler) SwapRegistrationHeatLine(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid registration ID", nil)
+	}
+
+	var req dto.SwapHeatLineRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+
+	operator, _ := c.Locals("username").(string)
+	if operator == "" {
+		operator = "Admin Panitia"
+	}
+	ip := c.IP()
+
+	regA, regB, err := h.svc.SwapRegistrationHeatLine(uint(id), req.TargetHeat, req.TargetLine, req.SwapIfOccupied, req.Round, operator, ip)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	isFinal := strings.ToLower(strings.TrimSpace(req.Round)) == "final"
+	hA, lA := regA.HeatNumber, regA.LineNumber
+	if isFinal {
+		hA, lA = regA.FinalHeatNumber, regA.FinalLineNumber
+	}
+
+	msg := fmt.Sprintf("Perenang %s berhasil dipindahkan ke Heat %d Lintasan %d", regA.Participant.Name, hA, lA)
+	if regB != nil {
+		hB, lB := regB.HeatNumber, regB.LineNumber
+		if isFinal {
+			hB, lB = regB.FinalHeatNumber, regB.FinalLineNumber
+		}
+		msg = fmt.Sprintf("Posisi berhasil ditukar: %s di Heat %d Line %d, dan %s di Heat %d Line %d",
+			regA.Participant.Name, hA, lA,
+			regB.Participant.Name, hB, lB)
+	}
+
+	return response.Success(c, fiber.StatusOK, msg, fiber.Map{
+		"swimmer":        regA,
+		"swappedSwimmer": regB,
+	})
+}
+
+func (h *AdminHandler) GetRaceResultLogs(c *fiber.Ctx) error {
+	tourneyIDStr := c.Query("tournament_id")
+	tourneyID, _ := strconv.ParseUint(tourneyIDStr, 10, 64)
+
+	round := c.Query("round")
+	action := c.Query("action")
+	search := c.Query("search")
+
+	limitStr := c.Query("limit", "50")
+	limit, _ := strconv.Atoi(limitStr)
+	offsetStr := c.Query("offset", "0")
+	offset, _ := strconv.Atoi(offsetStr)
+
+	logs, total, err := h.svc.GetRaceResultLogs(uint(tourneyID), round, action, search, limit, offset)
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Gagal mengambil log catatan hasil lomba", err.Error())
+	}
+
+	return response.Success(c, fiber.StatusOK, "Log catatan hasil lomba berhasil diambil", fiber.Map{
+		"logs":   logs,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
+}
+
+func (h *AdminHandler) GetRaceResultLogStats(c *fiber.Ctx) error {
+	tourneyIDStr := c.Query("tournament_id")
+	tourneyID, _ := strconv.ParseUint(tourneyIDStr, 10, 64)
+
+	stats, err := h.svc.GetRaceResultLogStats(uint(tourneyID))
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Gagal mengambil statistik log", err.Error())
+	}
+
+	return response.Success(c, fiber.StatusOK, "Statistik log berhasil diambil", stats)
 }
 
 func (h *AdminHandler) GetBanners(c *fiber.Ctx) error {
@@ -621,6 +817,128 @@ func (h *AdminHandler) ResetPageSections(c *fiber.Ctx) error {
 	}
 	allSections, _ := h.svc.GetPageSections(slug)
 	return response.Success(c, fiber.StatusOK, "Page sections reset to default successfully", allSections)
+}
+
+// ----------------------------------------------------
+// ROLE & PERMISSION HANDLERS
+// ----------------------------------------------------
+
+func (h *AdminHandler) GetRoles(c *fiber.Ctx) error {
+	roles, err := h.svc.GetRoles()
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch roles", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Roles fetched successfully", roles)
+}
+
+func (h *AdminHandler) CreateRole(c *fiber.Ctx) error {
+	var req dto.RoleRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid role payload", err.Error())
+	}
+
+	role, err := h.svc.CreateRole(req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusCreated, "Role created successfully", role)
+}
+
+func (h *AdminHandler) UpdateRole(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid role ID", nil)
+	}
+
+	var req dto.RoleRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid role payload", err.Error())
+	}
+
+	role, err := h.svc.UpdateRole(uint(id), req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Role updated successfully", role)
+}
+
+func (h *AdminHandler) DeleteRole(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid role ID", nil)
+	}
+
+	if err := h.svc.DeleteRole(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Role deleted successfully", nil)
+}
+
+// ----------------------------------------------------
+// USER MANAGEMENT HANDLERS
+// ----------------------------------------------------
+
+func (h *AdminHandler) GetUsers(c *fiber.Ctx) error {
+	users, err := h.svc.GetUsers()
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch users", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Users fetched successfully", users)
+}
+
+func (h *AdminHandler) CreateUser(c *fiber.Ctx) error {
+	var req dto.UserCreateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid user payload", err.Error())
+	}
+
+	user, err := h.svc.CreateUser(req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusCreated, "User created successfully", user)
+}
+
+func (h *AdminHandler) UpdateUser(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid user ID", nil)
+	}
+
+	var req dto.UserUpdateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid user payload", err.Error())
+	}
+
+	user, err := h.svc.UpdateUser(uint(id), req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "User updated successfully", user)
+}
+
+func (h *AdminHandler) DeleteUser(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid user ID", nil)
+	}
+
+	currentUserID, _ := c.Locals("user_id").(uint)
+
+	if err := h.svc.DeleteUser(uint(id), currentUserID); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "User deleted successfully", nil)
 }
 
 
