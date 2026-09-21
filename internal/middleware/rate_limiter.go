@@ -9,6 +9,9 @@ import (
 
 func SetupRateLimiter(maxRequests int) fiber.Handler {
 	return limiter.New(limiter.Config{
+		Next: func(c *fiber.Ctx) bool {
+			return c.Method() == fiber.MethodOptions
+		},
 		Max:        maxRequests,
 		Expiration: 1 * time.Minute,
 		KeyGenerator: func(c *fiber.Ctx) string {

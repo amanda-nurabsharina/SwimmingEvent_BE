@@ -37,7 +37,7 @@ func LoadConfig() *Config {
 		DBSSLMode:      getEnv("DB_SSLMODE", "disable"),
 		APISecretKey:   getEnv("API_SECRET_KEY", "secret-swimming-api-key-2026"),
 		JWTSecret:      getEnv("JWT_SECRET", "swimming-jwt-super-secret-key"),
-		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001"),
+		AllowedOrigins: getEnv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,https://admin_masc.fourplusone.my.id,https://masc.fourplusone.my.id"),
 		RateLimitMax:   60,
 	}
 }
