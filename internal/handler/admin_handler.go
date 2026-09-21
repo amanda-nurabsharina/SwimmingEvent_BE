@@ -720,7 +720,7 @@ func (h *AdminHandler) DeleteEvent(c *fiber.Ctx) error {
 	}
 
 	if err := h.svc.DeleteEvent(uint(id)); err != nil {
-		return response.Error(c, fiber.StatusInternalServerError, "Failed to delete event", err.Error())
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
 	}
 
 	return response.Success(c, fiber.StatusOK, "Event deleted successfully", nil)
@@ -756,7 +756,7 @@ func (h *AdminHandler) DeleteTournament(c *fiber.Ctx) error {
 	}
 
 	if err := h.svc.DeleteTournament(uint(id)); err != nil {
-		return response.Error(c, fiber.StatusInternalServerError, "Failed to delete tournament", err.Error())
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
 	}
 
 	return response.Success(c, fiber.StatusOK, "Tournament deleted successfully", nil)

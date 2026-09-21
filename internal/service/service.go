@@ -87,6 +87,13 @@ func (s *Service) SaveEvent(evt *domain.SwimmingEvent) error {
 }
 
 func (s *Service) DeleteEvent(id uint) error {
+	count, err := s.repo.CountRegistrationsByEventID(id)
+	if err != nil {
+		return fmt.Errorf("gagal memeriksa data peserta: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("tidak dapat menghapus nomor lomba: masih terdapat %d peserta terdaftar pada nomor lomba ini. Harap hapus atau pindahkan peserta terlebih dahulu", count)
+	}
 	return s.repo.DeleteEvent(id)
 }
 
@@ -1234,6 +1241,17 @@ func (s *Service) SaveTournament(t *domain.Tournament) error {
 }
 
 func (s *Service) DeleteTournament(id uint) error {
+	count, err := s.repo.CountRegistrationsByTournamentID(id)
+	if err != nil {
+		return fmt.Errorf("gagal memeriksa data peserta: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("tidak dapat menghapus turnamen: masih terdapat %d peserta terdaftar di turnamen ini. Harap hapus semua data peserta terlebih dahulu untuk menjaga integritas data", count)
+	}
+
+	// Hapus nomor lomba (sub-events) kosong milik turnamen ini
+	_ = s.repo.DeleteEventsByTournamentID(id)
+
 	return s.repo.DeleteTournament(id)
 }
 

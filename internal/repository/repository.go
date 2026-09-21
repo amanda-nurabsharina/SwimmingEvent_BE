@@ -1132,6 +1132,27 @@ func (r *Repository) SaveTournament(t *domain.Tournament) error {
 	return r.db.Create(t).Error
 }
 
+func (r *Repository) CountRegistrationsByTournamentID(tournamentID uint) (int64, error) {
+	var count int64
+	err := r.db.Model(&domain.Registration{}).
+		Joins("JOIN swimming_events ON swimming_events.id = registrations.swimming_event_id").
+		Where("swimming_events.tournament_id = ?", tournamentID).
+		Count(&count).Error
+	return count, err
+}
+
+func (r *Repository) CountRegistrationsByEventID(eventID uint) (int64, error) {
+	var count int64
+	err := r.db.Model(&domain.Registration{}).
+		Where("swimming_event_id = ?", eventID).
+		Count(&count).Error
+	return count, err
+}
+
+func (r *Repository) DeleteEventsByTournamentID(tournamentID uint) error {
+	return r.db.Where("tournament_id = ?", tournamentID).Delete(&domain.SwimmingEvent{}).Error
+}
+
 func (r *Repository) DeleteTournament(id uint) error {
 	return r.db.Delete(&domain.Tournament{}, id).Error
 }
