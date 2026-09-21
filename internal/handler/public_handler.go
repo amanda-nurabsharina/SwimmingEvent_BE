@@ -95,7 +95,9 @@ func (h *PublicHandler) Register(c *fiber.Ctx) error {
 }
 
 func (h *PublicHandler) GetStartingList(c *fiber.Ctx) error {
-	list, err := h.svc.GetStartingList()
+	tourneyIDStr := c.Query("tournament_id")
+	tourneyID, _ := strconv.ParseUint(tourneyIDStr, 10, 64)
+	list, err := h.svc.GetStartingList(uint(tourneyID))
 	if err != nil {
 		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch starting list", err.Error())
 	}

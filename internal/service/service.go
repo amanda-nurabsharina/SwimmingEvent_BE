@@ -208,24 +208,33 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 	}, nil
 }
 
-func (s *Service) GetStartingList() ([]dto.StartingItemDTO, error) {
+func (s *Service) GetStartingList(tournamentID uint) ([]dto.StartingItemDTO, error) {
 	regs, err := s.repo.FindRegistrations()
 	if err != nil {
 		return nil, err
 	}
 
 	var items []dto.StartingItemDTO
-	for idx, r := range regs {
+	counter := 1
+	for _, r := range regs {
+		if tournamentID > 0 && r.SwimmingEvent.TournamentID != tournamentID {
+			continue
+		}
 		items = append(items, dto.StartingItemDTO{
-			No:         idx + 1,
-			Nama:       r.Participant.Name,
-			Gender:     r.Participant.Gender,
-			TimeSeed:   r.TimeSeed,
-			NomorLomba: r.SwimmingEvent.EventName,
-			Club:       r.Participant.Club,
-			PIC:        r.Participant.PIC,
-			Kontak:     r.Participant.Contact,
+			No:             counter,
+			Nama:           r.Participant.Name,
+			Gender:         r.Participant.Gender,
+			TimeSeed:       r.TimeSeed,
+			NomorLomba:     r.SwimmingEvent.EventName,
+			Club:           r.Participant.Club,
+			PIC:            r.Participant.PIC,
+			Kontak:         r.Participant.Contact,
+			Result:         r.RaceResultTime,
+			Rank:           r.Rank,
+			TournamentID:   r.SwimmingEvent.TournamentID,
+			TournamentName: r.SwimmingEvent.Tournament.Name,
 		})
+		counter++
 	}
 	return items, nil
 }

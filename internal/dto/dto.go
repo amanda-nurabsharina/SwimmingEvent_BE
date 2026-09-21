@@ -133,14 +133,18 @@ type GenerateFinalRoundRequest struct {
 }
 
 type StartingItemDTO struct {
-	No        int    `json:"no"`
-	Nama      string `json:"nama"`
-	Gender    string `json:"jenis_kelamin"`
-	TimeSeed  string `json:"time_seed"`
-	NomorLomba string `json:"nomor_lomba"`
-	Club      string `json:"club"`
-	PIC       string `json:"pic"`
-	Kontak    string `json:"kontak"`
+	No             int    `json:"no"`
+	Nama           string `json:"nama"`
+	Gender         string `json:"jenis_kelamin"`
+	TimeSeed       string `json:"time_seed"`
+	NomorLomba     string `json:"nomor_lomba"`
+	Club           string `json:"club"`
+	PIC            string `json:"pic"`
+	Kontak         string `json:"kontak"`
+	Result         string `json:"result,omitempty"`
+	Rank           int    `json:"rank,omitempty"`
+	TournamentID   uint   `json:"tournament_id,omitempty"`
+	TournamentName string `json:"tournament_name,omitempty"`
 }
 
 type BukuAcaraHeatItemDTO struct {
