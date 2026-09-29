@@ -12,7 +12,7 @@ COPY config/ ./config/
 COPY internal/ ./internal/
 COPY pkg/ ./pkg/
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-w -s" -o main ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main ./cmd/server
 
 FROM alpine:3.21
 

@@ -8,3 +8,4 @@ uploads/*
 !uploads/.gitkeep
 docker-compose.yml
 Dockerfile
+wa-gateway/
