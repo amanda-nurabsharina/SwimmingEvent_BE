@@ -128,11 +128,7 @@ func (h *AdminHandler) RecordRaceResult(c *fiber.Ctx) error {
 		timeResult = req.FinalTime
 	}
 	if req.Status != "" && req.Status != "OK" {
-		if timeResult == "" {
-			timeResult = req.Status
-		} else {
-			timeResult = fmt.Sprintf("%s (%s)", timeResult, req.Status)
-		}
+		timeResult = req.Status
 	}
 
 	operator, _ := c.Locals("username").(string)
