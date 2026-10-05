@@ -85,6 +85,14 @@ func main() {
 	admin.Post("/upload", uploadHandler.UploadImage)
 	admin.Get("/registrations", adminHandler.GetRegistrations)
 	admin.Put("/registrations/:id/verify", adminHandler.VerifyPayment)
+	admin.Delete("/registrations/:id", adminHandler.SoftDeleteRegistration)
+	admin.Put("/registrations/:id/restore", adminHandler.RestoreRegistration)
+	admin.Delete("/registrations/:id/permanent", adminHandler.HardDeleteRegistration)
+
+	admin.Delete("/participants/:id", adminHandler.SoftDeleteParticipant)
+	admin.Put("/participants/:id/restore", adminHandler.RestoreParticipant)
+	admin.Delete("/participants/:id/permanent", adminHandler.HardDeleteParticipant)
+
 	admin.Post("/buku-acara/generate", adminHandler.GenerateBukuAcara)
 	admin.Post("/buku-acara/generate-final", adminHandler.GenerateFinalRound)
 	admin.Get("/buku-acara", publicHandler.GetBukuAcara)

@@ -224,6 +224,9 @@ func (s *Service) GetStartingList(tournamentID uint) ([]dto.StartingItemDTO, err
 	var items []dto.StartingItemDTO
 	counter := 1
 	for _, r := range regs {
+		if !r.IsActive || (r.ParticipantID > 0 && !r.Participant.IsActive) {
+			continue
+		}
 		if tournamentID > 0 && r.SwimmingEvent.TournamentID != tournamentID {
 			continue
 		}
@@ -356,6 +359,9 @@ func (s *Service) GenerateBukuAcara(maxLanes int, tournamentID uint, force bool)
 
 	eventGroup := make(map[uint][]domain.Registration)
 	for _, r := range regs {
+		if !r.IsActive || (r.ParticipantID > 0 && !r.Participant.IsActive) {
+			continue
+		}
 		if strings.ToLower(r.PaymentStatus) == "verified" {
 			eventGroup[r.SwimmingEventID] = append(eventGroup[r.SwimmingEventID], r)
 		}
@@ -512,6 +518,9 @@ func (s *Service) GetBukuAcara(tournamentID uint, round string) ([]dto.BukuAcara
 	hasFinalistsMap := make(map[uint]bool)
 
 	for _, r := range regs {
+		if !r.IsActive || (r.ParticipantID > 0 && !r.Participant.IsActive) {
+			continue
+		}
 		if strings.ToLower(r.PaymentStatus) == "verified" {
 			if r.IsFinalist && r.FinalHeatNumber > 0 && r.FinalLineNumber > 0 {
 				hasFinalistsMap[r.SwimmingEventID] = true
@@ -665,6 +674,30 @@ func (s *Service) VerifyPayment(id uint, status string) error {
 		_ = s.repo.UpdateRegistrationHeatLine(id, 0, 0)
 	}
 	return s.repo.UpdateRegistrationStatus(id, status)
+}
+
+func (s *Service) SoftDeleteParticipant(participantID uint) error {
+	return s.repo.SoftDeleteParticipant(participantID)
+}
+
+func (s *Service) RestoreParticipant(participantID uint) error {
+	return s.repo.RestoreParticipant(participantID)
+}
+
+func (s *Service) HardDeleteParticipant(participantID uint) error {
+	return s.repo.HardDeleteParticipant(participantID)
+}
+
+func (s *Service) SoftDeleteRegistration(registrationID uint) error {
+	return s.repo.SoftDeleteRegistration(registrationID)
+}
+
+func (s *Service) RestoreRegistration(registrationID uint) error {
+	return s.repo.RestoreRegistration(registrationID)
+}
+
+func (s *Service) HardDeleteRegistration(registrationID uint) error {
+	return s.repo.HardDeleteRegistration(registrationID)
 }
 
 // RecordRaceResult records result with lock enforcement
@@ -980,6 +1013,9 @@ func (s *Service) GenerateFinalRound(tournamentID uint, maxLanes int, qualifyMod
 
 	eventMap := make(map[uint][]domain.Registration)
 	for _, r := range regs {
+		if !r.IsActive || (r.ParticipantID > 0 && !r.Participant.IsActive) {
+			continue
+		}
 		if strings.ToLower(r.PaymentStatus) == "verified" && r.HeatNumber > 0 {
 			eventMap[r.SwimmingEventID] = append(eventMap[r.SwimmingEventID], r)
 		}

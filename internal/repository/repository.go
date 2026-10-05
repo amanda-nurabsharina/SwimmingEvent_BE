@@ -24,7 +24,7 @@ func (r *Repository) AutoMigrate() error {
 	_ = r.db.Exec("DROP INDEX IF EXISTS idx_registrations_registration_code").Error
 	_ = r.db.Exec("CREATE INDEX IF NOT EXISTS idx_registrations_registration_code ON registrations(registration_code)").Error
 
-	return r.db.AutoMigrate(
+	err := r.db.AutoMigrate(
 		&domain.Role{},
 		&domain.User{},
 		&domain.MasterMenu{},
@@ -51,6 +51,23 @@ func (r *Repository) AutoMigrate() error {
 		&domain.Testimonial{},
 		&domain.TestimonialSectionConfig{},
 	)
+	if err != nil {
+		return err
+	}
+
+	// Ensure default true for is_active on existing participants & registrations
+	_ = r.db.Model(&domain.Participant{}).Where("is_active IS NULL").Update("is_active", true).Error
+	_ = r.db.Model(&domain.Registration{}).Where("is_active IS NULL").Update("is_active", true).Error
+	var activeParticipantsCount int64
+	r.db.Model(&domain.Participant{}).Where("is_active = ?", true).Count(&activeParticipantsCount)
+	var totalParticipantsCount int64
+	r.db.Model(&domain.Participant{}).Count(&totalParticipantsCount)
+	if totalParticipantsCount > 0 && activeParticipantsCount == 0 {
+		_ = r.db.Model(&domain.Participant{}).Where("1 = 1").Update("is_active", true).Error
+		_ = r.db.Model(&domain.Registration{}).Where("1 = 1").Update("is_active", true).Error
+	}
+
+	return nil
 }
 
 func (r *Repository) SeedInitialData() error {
@@ -746,8 +763,92 @@ func (r *Repository) FindRegistrations() ([]domain.Registration, error) {
 
 func (r *Repository) FindRegistrationByCode(code string) ([]domain.Registration, error) {
 	var regs []domain.Registration
-	err := r.db.Preload("Participant").Preload("SwimmingEvent").Where("registration_code = ?", code).Find(&regs).Error
+	err := r.db.Preload("Participant").Preload("SwimmingEvent").Where("registration_code = ? AND is_active = ?", code, true).Find(&regs).Error
 	return regs, err
+}
+
+// SoftDeleteParticipant marks a participant and all its registrations as inactive
+func (r *Repository) SoftDeleteParticipant(participantID uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&domain.Participant{}).Where("id = ?", participantID).Update("is_active", false).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&domain.Registration{}).Where("participant_id = ?", participantID).Updates(map[string]interface{}{
+			"is_active":   false,
+			"heat_number": 0,
+			"line_number": 0,
+		}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// RestoreParticipant restores a participant and its registrations to active
+func (r *Repository) RestoreParticipant(participantID uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&domain.Participant{}).Where("id = ?", participantID).Update("is_active", true).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&domain.Registration{}).Where("participant_id = ?", participantID).Update("is_active", true).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// HardDeleteParticipant permanently deletes a participant and all its registrations
+func (r *Repository) HardDeleteParticipant(participantID uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var regIDs []uint
+		if err := tx.Model(&domain.Registration{}).Where("participant_id = ?", participantID).Pluck("id", &regIDs).Error; err != nil {
+			return err
+		}
+		if len(regIDs) > 0 {
+			_ = tx.Where("registration_id IN ?", regIDs).Delete(&domain.RaceResultLog{}).Error
+			if err := tx.Where("id IN ?", regIDs).Delete(&domain.Registration{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("id = ?", participantID).Delete(&domain.Participant{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// SoftDeleteRegistration marks a single registration as inactive
+func (r *Repository) SoftDeleteRegistration(id uint) error {
+	return r.db.Model(&domain.Registration{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"is_active":   false,
+		"heat_number": 0,
+		"line_number": 0,
+	}).Error
+}
+
+// RestoreRegistration restores a single registration to active
+func (r *Repository) RestoreRegistration(id uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var reg domain.Registration
+		if err := tx.First(&reg, id).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&domain.Registration{}).Where("id = ?", id).Update("is_active", true).Error; err != nil {
+			return err
+		}
+		if reg.ParticipantID > 0 {
+			_ = tx.Model(&domain.Participant{}).Where("id = ?", reg.ParticipantID).Update("is_active", true).Error
+		}
+		return nil
+	})
+}
+
+// HardDeleteRegistration permanently deletes a single registration
+func (r *Repository) HardDeleteRegistration(id uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		_ = tx.Where("registration_id = ?", id).Delete(&domain.RaceResultLog{}).Error
+		return tx.Where("id = ?", id).Delete(&domain.Registration{}).Error
+	})
 }
 
 func (r *Repository) UpdateRegistrationStatus(id uint, status string) error {
@@ -820,7 +921,7 @@ func (r *Repository) ResetTournamentHeatLines(tournamentID uint) error {
 func (r *Repository) FindVerifiedRegistrations() ([]domain.Registration, error) {
 	var regs []domain.Registration
 	err := r.db.Preload("Participant").Preload("SwimmingEvent").Preload("SwimmingEvent.Tournament").
-		Where("LOWER(payment_status) = ?", "verified").
+		Where("LOWER(payment_status) = ? AND is_active = ?", "verified", true).
 		Find(&regs).Error
 	return regs, err
 }
@@ -1136,7 +1237,7 @@ func (r *Repository) CountRegistrationsByTournamentID(tournamentID uint) (int64,
 	var count int64
 	err := r.db.Model(&domain.Registration{}).
 		Joins("JOIN swimming_events ON swimming_events.id = registrations.swimming_event_id").
-		Where("swimming_events.tournament_id = ?", tournamentID).
+		Where("swimming_events.tournament_id = ? AND registrations.is_active = ?", tournamentID, true).
 		Count(&count).Error
 	return count, err
 }
@@ -1144,7 +1245,7 @@ func (r *Repository) CountRegistrationsByTournamentID(tournamentID uint) (int64,
 func (r *Repository) CountRegistrationsByEventID(eventID uint) (int64, error) {
 	var count int64
 	err := r.db.Model(&domain.Registration{}).
-		Where("swimming_event_id = ?", eventID).
+		Where("swimming_event_id = ? AND is_active = ?", eventID, true).
 		Count(&count).Error
 	return count, err
 }

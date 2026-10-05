@@ -95,7 +95,7 @@ type SwimmingEvent struct {
 	EventCode    int         `gorm:"index;not null" json:"event_code"` // e.g. 101, 102, 103...
 	EventName    string      `gorm:"size:255;not null" json:"event_name"`   // e.g. 100m Gaya Kupu-kupu
 	Distance     string      `gorm:"size:50;not null" json:"distance"`     // e.g. 50 METER, 100 METER, 200 METER
-	Stroke       string      `gorm:"size:50;not null" json:"stroke"`       // FREESTYLE, BREASTSTROKE, BACKSTROKE, BUTTERFLY, INDIVIDUALMEDLEY
+	Stroke       string      `gorm:"size:50;not null" json:"stroke"`       // FREESTYLE, FREESTYLE_FIN, KICKING_BOARD, BREASTSTROKE, BACKSTROKE, BUTTERFLY, INDIVIDUALMEDLEY
 	Gender       string      `gorm:"size:20;not null" json:"gender"`       // PUTRA, PUTRI
 	AgeGroup     string      `gorm:"size:50;default:'OPEN'" json:"age_group"` // KU 4, KU 3, KU 2, KU 1, Senior, OPEN
 	Fee          float64     `gorm:"default:150000" json:"fee"`
@@ -118,6 +118,7 @@ type Participant struct {
 	AgeGroup            string    `gorm:"size:50" json:"age_group"`
 	VerificationDocType string    `gorm:"size:100;default:'Akte Kelahiran'" json:"verification_doc_type"`
 	VerificationDocURL  string    `gorm:"type:text" json:"verification_doc_url"`
+	IsActive            bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -143,6 +144,7 @@ type Registration struct {
 	FinalResultTime  string        `gorm:"size:50" json:"final_result_time"`   // Catatan waktu hasil babak final
 	FinalRank        int           `gorm:"default:0" json:"final_rank"`          // Juara 1, 2, 3 akhir babak final
 	IsFinalist       bool          `gorm:"default:false" json:"is_finalist"`   // Apakah lolos ke babak final
+	IsActive         bool          `gorm:"default:true" json:"is_active"`
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
 }

@@ -68,6 +68,78 @@ func (h *AdminHandler) VerifyPayment(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "Payment status updated successfully", nil)
 }
 
+func (h *AdminHandler) SoftDeleteParticipant(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "ID peserta tidak valid", nil)
+	}
+	if err := h.svc.SoftDeleteParticipant(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Gagal menonaktifkan peserta", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Peserta berhasil dinonaktifkan (dipindahkan ke tab peserta dihapus)", nil)
+}
+
+func (h *AdminHandler) RestoreParticipant(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "ID peserta tidak valid", nil)
+	}
+	if err := h.svc.RestoreParticipant(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Gagal memulihkan peserta", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Peserta berhasil dipulihkan", nil)
+}
+
+func (h *AdminHandler) HardDeleteParticipant(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "ID peserta tidak valid", nil)
+	}
+	if err := h.svc.HardDeleteParticipant(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Gagal menghapus peserta secara permanen", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Peserta berhasil dihapus secara permanen dari database", nil)
+}
+
+func (h *AdminHandler) SoftDeleteRegistration(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "ID pendaftaran tidak valid", nil)
+	}
+	if err := h.svc.SoftDeleteRegistration(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Gagal menonaktifkan nomor lomba", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Nomor lomba berhasil dinonaktifkan", nil)
+}
+
+func (h *AdminHandler) RestoreRegistration(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "ID pendaftaran tidak valid", nil)
+	}
+	if err := h.svc.RestoreRegistration(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Gagal memulihkan nomor lomba", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Nomor lomba berhasil dipulihkan", nil)
+}
+
+func (h *AdminHandler) HardDeleteRegistration(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "ID pendaftaran tidak valid", nil)
+	}
+	if err := h.svc.HardDeleteRegistration(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Gagal menghapus nomor lomba secara permanen", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Nomor lomba berhasil dihapus secara permanen", nil)
+}
+
 func (h *AdminHandler) GenerateBukuAcara(c *fiber.Ctx) error {
 	var req dto.GenerateBukuAcaraRequest
 	_ = c.BodyParser(&req)
