@@ -117,7 +117,11 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 		}
 
 		// Kategori Kelompok Umur resmi Akuatik Indonesia (PB PRSI)
-		if age <= 9 {
+		if age <= 5 {
+			derivedKU = "KU 6B"
+		} else if age <= 7 {
+			derivedKU = "KU 6A"
+		} else if age <= 9 {
 			derivedKU = "KU 5"
 		} else if age <= 11 {
 			derivedKU = "KU 4"
