@@ -157,8 +157,18 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 		// Validasi Kelompok Umur
 		evKU := strings.ToUpper(strings.TrimSpace(event.AgeGroup))
 		partKU := strings.ToUpper(strings.TrimSpace(req.AgeGroup))
-		if evKU != "" && evKU != "OPEN" && evKU != "TERBUKA" && evKU != partKU {
-			return nil, fmt.Errorf("nomor lomba '%s' (kategori %s) tidak sesuai dengan kelompok umur atlet (%s)", event.EventName, event.AgeGroup, req.AgeGroup)
+		if evKU != "" && evKU != "OPEN" && evKU != "TERBUKA" && evKU != "SEMUA" && evKU != "ALL" {
+			matchKU := (evKU == partKU)
+			if !matchKU {
+				normEvKU := strings.ReplaceAll(evKU, " ", "")
+				normPartKU := strings.ReplaceAll(partKU, " ", "")
+				if normEvKU == normPartKU || strings.HasPrefix(normEvKU, normPartKU) || strings.HasPrefix(normPartKU, normEvKU) {
+					matchKU = true
+				}
+			}
+			if !matchKU {
+				return nil, fmt.Errorf("nomor lomba '%s' (kategori %s) tidak sesuai dengan kelompok umur atlet (%s)", event.EventName, event.AgeGroup, req.AgeGroup)
+			}
 		}
 	}
 
