@@ -14,4 +14,4 @@ uploads/*
 .idea/
 .vscode/
 wa-gateway/node_modules/
-wa-gateway/auth_info_baileys/
+wa-gateway/auth_info_baileys*/

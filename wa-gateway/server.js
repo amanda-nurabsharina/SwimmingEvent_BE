@@ -19,8 +19,19 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 
-const AUTH_DIR = path.join(__dirname, "auth_info_baileys");
-const logger = pino({ level: "silent" });
+// Distinguish Local vs Server environment
+const IS_PRODUCTION =
+  process.env.NODE_ENV === "production" ||
+  process.env.APP_ENV === "production" ||
+  process.env.IS_SERVER === "true";
+
+// Use distinct session folder for Local vs Server to prevent session collision
+const SESSION_NAME =
+  process.env.WA_SESSION_NAME ||
+  (IS_PRODUCTION ? "auth_info_baileys_server" : "auth_info_baileys_local");
+
+const AUTH_DIR = path.join(__dirname, SESSION_NAME);
+const logger = pino({ level: process.env.DEBUG_WA ? "info" : "silent" });
 
 let sock = null;
 let currentQR = null;
@@ -48,8 +59,16 @@ async function startWhatsAppSocket() {
   isConnecting = true;
 
   try {
+    console.log(`[WA Gateway] Initializing socket (${IS_PRODUCTION ? "SERVER" : "LOCAL"}). Session: ${SESSION_NAME}`);
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-    const { version, isLatest } = await fetchLatestBaileysVersion();
+
+    let version = [2, 3000, 1015901307];
+    try {
+      const v = await fetchLatestBaileysVersion();
+      if (v?.version) version = v.version;
+    } catch {
+      // Fallback version if offline or github rate-limited
+    }
 
     sock = makeWASocket({
       version,
@@ -59,9 +78,14 @@ async function startWhatsAppSocket() {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, logger),
       },
-      browser: ["Akuatik Indonesia Admin", "Chrome", "1.0.0"],
+      browser: IS_PRODUCTION
+        ? ["MASC Swimming (Server)", "Chrome", "1.0.0"]
+        : ["MASC Swimming (Local Dev)", "Chrome", "1.0.0"],
       generateHighQualityLinkPreview: true,
       syncFullHistory: false,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000,
     });
 
     sock.ev.on("creds.update", saveCreds);
@@ -73,8 +97,9 @@ async function startWhatsAppSocket() {
         currentQR = qr;
         try {
           currentQRDataUrl = await qrcode.toDataURL(qr, { margin: 2, scale: 6 });
+          console.log("[WA Gateway] New QR code generated successfully");
         } catch (err) {
-          console.error("Failed to generate QR data URL:", err);
+          console.error("[WA Gateway] Failed to generate QR data URL:", err);
         }
       }
 
@@ -86,19 +111,19 @@ async function startWhatsAppSocket() {
         currentQRDataUrl = null;
 
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        console.log(`[WA Gateway] Connection closed (${statusCode || "unknown"}). Reason: ${lastDisconnect?.error?.message || "none"}`);
 
-        console.log(`[WA Gateway] Connection closed (${statusCode}). Reconnecting: ${shouldReconnect}`);
-
-        if (statusCode === DisconnectReason.loggedOut) {
-          // Clear auth credentials if logged out
+        if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+          console.log(`[WA Gateway] Logged out / session expired. Resetting session directory ${SESSION_NAME}...`);
           try {
             fs.rmSync(AUTH_DIR, { recursive: true, force: true });
           } catch (e) {}
-        }
-
-        if (shouldReconnect) {
-          setTimeout(() => startWhatsAppSocket(), 3000);
+          // Immediately restart socket so a fresh QR code is available for scanning!
+          setTimeout(() => startWhatsAppSocket(), 2000);
+        } else {
+          // Reconnect for other reasons (timeout, network blink, restartRequired)
+          const delay = statusCode === DisconnectReason.restartRequired ? 1000 : 3000;
+          setTimeout(() => startWhatsAppSocket(), delay);
         }
       } else if (connection === "open") {
         isConnected = true;
@@ -107,12 +132,11 @@ async function startWhatsAppSocket() {
         currentQRDataUrl = null;
         pairingCode = null;
 
-        // Extract phone number from JID (e.g. 628123456789:1@s.whatsapp.net)
         const userJid = sock.user?.id || "";
         const rawPhone = userJid.split(":")[0] || userJid.split("@")[0];
         connectedPhone = rawPhone;
 
-        console.log(`[WA Gateway] Connected successfully to WhatsApp! Admin Phone: ${connectedPhone}`);
+        console.log(`[WA Gateway] Connected successfully to WhatsApp! Admin Phone: +${connectedPhone}`);
       }
     });
   } catch (error) {
@@ -128,6 +152,11 @@ async function startWhatsAppSocket() {
 
 // 1. GET STATUS & QR
 app.get("/api/wa/status", (req, res) => {
+  // If not connected, not currently connecting, and no QR exists, wake up socket
+  if (!isConnected && !isConnecting && !currentQRDataUrl) {
+    startWhatsAppSocket();
+  }
+
   res.json({
     success: true,
     isConnected,
@@ -135,7 +164,40 @@ app.get("/api/wa/status", (req, res) => {
     qrCodeUrl: currentQRDataUrl,
     pairingCode,
     status: isConnected ? "connected" : currentQRDataUrl ? "scan_needed" : isConnecting ? "connecting" : "disconnected",
+    environment: IS_PRODUCTION ? "production" : "development",
+    sessionDir: SESSION_NAME,
   });
+});
+
+// 1b. POST RESTART / FORCE REFRESH QR
+app.post("/api/wa/restart", async (req, res) => {
+  try {
+    if (sock) {
+      try {
+        sock.end(new Error("Manual restart requested"));
+      } catch (e) {}
+    }
+    isConnected = false;
+    connectedPhone = null;
+    isConnecting = false;
+    currentQR = null;
+    currentQRDataUrl = null;
+    pairingCode = null;
+
+    if (req.body?.clearSession) {
+      try {
+        fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+      } catch (e) {}
+    }
+
+    setTimeout(() => startWhatsAppSocket(), 1000);
+    return res.json({
+      success: true,
+      message: "Gateway restarting, generating fresh QR code...",
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // 2. POST PAIRING CODE (Using phone number from Settings)
