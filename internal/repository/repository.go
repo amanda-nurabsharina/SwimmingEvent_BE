@@ -327,7 +327,7 @@ func (r *Repository) SeedInitialData() error {
 				Category:     "Prestasi & Squad",
 				Title:        "Prestasi & Squad Atlet (Club)",
 				Subtitle:     "PEMBINAAN ATLET KOMPETISI",
-				AgeBadge:     "KU 5 s/d KU 1",
+				AgeBadge:     "KU 6A s/d KU 1",
 				PopularBadge: "",
 				Description:  "Latihan intensif pembinaan atlet kompetisi tingkat daerah, Kejurda, Kejurnas, dan Popda dengan analisis video stroke mekanik.",
 				Features:     "Latihan 5-6x seminggu + Dryland\nAnalisa biomekanik berkala\nTarget ranking nasional & limit waktu\nPrioritas kejuaraan & training camp",

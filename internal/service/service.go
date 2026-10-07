@@ -116,7 +116,8 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 			return nil, fmt.Errorf("usia atlet (%d tahun) di luar batas kepesertaan yang diperbolehkan (minimal 4 tahun)", age)
 		}
 
-		// Kategori Kelompok Umur resmi Akuatik Indonesia (PB PRSI)
+		// Pembagian Kelompok Umur (KU) resmi turnamen:
+		// KU 6B (4 - 5 Thn), KU 6A (6 - 7 Thn), KU 5 (8 - 9 Thn), KU 4 (10 - 11 Thn), KU 3 (12 - 13 Thn), KU 2 (14 - 15 Thn), KU 1 (16 - 18 Thn), Senior (>= 19 Thn)
 		if age <= 5 {
 			derivedKU = "KU 6B"
 		} else if age <= 7 {
@@ -150,19 +151,44 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 		// Validasi Gender
 		evGender := strings.ToUpper(strings.TrimSpace(event.Gender))
 		partGender := strings.ToUpper(strings.TrimSpace(req.Gender))
-		if evGender != "" && evGender != partGender {
-			return nil, fmt.Errorf("nomor lomba '%s' (%s) tidak sesuai dengan jenis kelamin atlet (%s)", event.EventName, event.Gender, req.Gender)
+		if evGender != "" && evGender != "ALL" && evGender != "SEMUA" && evGender != "CAMPURAN" && evGender != "MIXED" {
+			isMatch := (evGender == partGender)
+			if !isMatch {
+				if partGender == "PUTRA" && (evGender == "PA" || evGender == "L" || evGender == "LAKI-LAKI" || strings.HasPrefix(evGender, "PUTRA")) {
+					isMatch = true
+				} else if partGender == "PUTRI" && (evGender == "PI" || evGender == "P" || evGender == "PEREMPUAN" || strings.HasPrefix(evGender, "PUTRI")) {
+					isMatch = true
+				}
+			}
+			if !isMatch {
+				return nil, fmt.Errorf("nomor lomba '%s' (%s) tidak sesuai dengan jenis kelamin atlet (%s)", event.EventName, event.Gender, req.Gender)
+			}
 		}
 
 		// Validasi Kelompok Umur
 		evKU := strings.ToUpper(strings.TrimSpace(event.AgeGroup))
 		partKU := strings.ToUpper(strings.TrimSpace(req.AgeGroup))
 		if evKU != "" && evKU != "OPEN" && evKU != "TERBUKA" && evKU != "SEMUA" && evKU != "ALL" {
-			matchKU := (evKU == partKU)
+			cleanEvKU := evKU
+			if idx := strings.Index(cleanEvKU, "("); idx != -1 {
+				cleanEvKU = strings.TrimSpace(cleanEvKU[:idx])
+			}
+			cleanPartKU := partKU
+			if idx := strings.Index(cleanPartKU, "("); idx != -1 {
+				cleanPartKU = strings.TrimSpace(cleanPartKU[:idx])
+			}
+
+			normEvKU := strings.ReplaceAll(cleanEvKU, " ", "")
+			normPartKU := strings.ReplaceAll(cleanPartKU, " ", "")
+
+			matchKU := (normEvKU == normPartKU)
 			if !matchKU {
-				normEvKU := strings.ReplaceAll(evKU, " ", "")
-				normPartKU := strings.ReplaceAll(partKU, " ", "")
-				if normEvKU == normPartKU || strings.HasPrefix(normEvKU, normPartKU) || strings.HasPrefix(normPartKU, normEvKU) {
+				// KU 6 matches either KU 6A or KU 6B
+				if (normEvKU == "KU6" && strings.HasPrefix(normPartKU, "KU6")) || (normPartKU == "KU6" && strings.HasPrefix(normEvKU, "KU6")) {
+					matchKU = true
+				}
+				// Also handle combined formats like "KU 6A / 6B" or "KU 6A, KU 6B"
+				if strings.Contains(cleanEvKU, cleanPartKU) {
 					matchKU = true
 				}
 			}
