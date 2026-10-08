@@ -46,6 +46,22 @@ services:
     volumes:
       - backend_uploads:/app/uploads
 
+  wa-gateway:
+    build:
+      context: ./wa-gateway
+      dockerfile: Dockerfile
+    container_name: swimming_wa_gateway
+    restart: always
+    ports:
+      - "${PORT_WA:-5001}:5001"
+    environment:
+      - PORT=5001
+      - APP_ENV=${APP_ENV:-production}
+      - IS_SERVER=true
+    volumes:
+      - wa_session_data:/app/auth_info_baileys_server
+
 volumes:
   postgres_data:
   backend_uploads:
+  wa_session_data:

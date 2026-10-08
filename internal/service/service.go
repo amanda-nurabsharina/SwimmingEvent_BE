@@ -117,11 +117,11 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 		}
 
 		// Pembagian Kelompok Umur (KU) resmi turnamen:
-		// KU 6B (4 - 5 Thn), KU 6A (6 - 7 Thn), KU 5 (8 - 9 Thn), KU 4 (10 - 11 Thn), KU 3 (12 - 13 Thn), KU 2 (14 - 15 Thn), KU 1 (16 - 18 Thn), Senior (>= 19 Thn)
+		// KU 6A (4 - 5 Thn), KU 6B (6 - 7 Thn), KU 5 (8 - 9 Thn), KU 4 (10 - 11 Thn), KU 3 (12 - 13 Thn), KU 2 (14 - 15 Thn), KU 1 (16 - 18 Thn), Senior (>= 19 Thn)
 		if age <= 5 {
-			derivedKU = "KU 6B"
-		} else if age <= 7 {
 			derivedKU = "KU 6A"
+		} else if age <= 7 {
+			derivedKU = "KU 6B"
 		} else if age <= 9 {
 			derivedKU = "KU 5"
 		} else if age <= 11 {

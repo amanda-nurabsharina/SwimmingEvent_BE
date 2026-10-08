@@ -97,7 +97,7 @@ type SwimmingEvent struct {
 	Distance     string      `gorm:"size:50;not null" json:"distance"`     // e.g. 25 METER, 50 METER, 100 METER, 200 METER
 	Stroke       string      `gorm:"size:50;not null" json:"stroke"`       // FREESTYLE, FREESTYLE_FIN, BACKSTROKE_FIN, BUTTERFLY_FIN, KICKING_BOARD, BREASTSTROKE, BACKSTROKE, BUTTERFLY, INDIVIDUALMEDLEY
 	Gender       string      `gorm:"size:20;not null" json:"gender"`       // PUTRA, PUTRI
-	AgeGroup     string      `gorm:"size:50;default:'OPEN'" json:"age_group"` // KU 6B, KU 6A, KU 5, KU 4, KU 3, KU 2, KU 1, Senior, OPEN
+	AgeGroup     string      `gorm:"size:50;default:'OPEN'" json:"age_group"` // KU 6A, KU 6B, KU 5, KU 4, KU 3, KU 2, KU 1, Senior, OPEN
 	Fee          float64     `gorm:"default:150000" json:"fee"`
 	ScheduleTime string      `gorm:"size:100;default:'08:00 WIB'" json:"schedule_time"`
 	HeatCategory string      `gorm:"size:50;default:'HEAT'" json:"heat_category"` // "HEAT" or "GROUP"
