@@ -11,6 +11,7 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
+  Browsers,
 } = require("@whiskeysockets/baileys");
 
 const app = express();
@@ -78,9 +79,7 @@ async function startWhatsAppSocket() {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, logger),
       },
-      browser: IS_PRODUCTION
-        ? ["MASC Swimming (Server)", "Chrome", "1.0.0"]
-        : ["MASC Swimming (Local Dev)", "Chrome", "1.0.0"],
+      browser: Browsers.ubuntu("Chrome"),
       generateHighQualityLinkPreview: true,
       syncFullHistory: false,
       connectTimeoutMs: 60000,
