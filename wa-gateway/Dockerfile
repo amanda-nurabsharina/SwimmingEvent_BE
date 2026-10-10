@@ -1,8 +1,8 @@
-FROM node:20-alpine
+FROM node:20-slim
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --prefer-offline --no-audit
+RUN npm install --omit=dev --no-audit
 
 COPY . .
 
