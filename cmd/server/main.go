@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 
 	"serve-swimming-be/config"
 	"serve-swimming-be/internal/handler"
@@ -39,8 +40,19 @@ func main() {
 	log.Println("Swimming Competition Database connected successfully")
 
 	repo := repository.NewRepository(db)
-	if err := repo.SeedInitialData(); err != nil {
-		log.Fatalf("Failed to seed initial database data: %v", err)
+	if err := repo.AutoMigrate(); err != nil {
+		log.Fatalf("Failed to auto migrate database schema: %v", err)
+	}
+
+	// Auto-seeder dinonaktifkan secara default untuk mencegah overwrite / menimpa data existing.
+	// Seeder hanya berjalan jika environment AUTO_SEED=true secara eksplisit.
+	if os.Getenv("AUTO_SEED") == "true" {
+		log.Println("[Seeder] AUTO_SEED=true terdeteksi. Menjalankan SeedInitialData()...")
+		if err := repo.SeedInitialData(); err != nil {
+			log.Fatalf("Failed to seed initial database data: %v", err)
+		}
+	} else {
+		log.Println("[Seeder] Auto-seeder dinonaktifkan secara aman (mencegah penimpaan data existing).")
 	}
 
 	svc := service.NewService(repo, cfg)
@@ -89,6 +101,7 @@ func main() {
 	admin.Put("/registrations/:id/restore", adminHandler.RestoreRegistration)
 	admin.Delete("/registrations/:id/permanent", adminHandler.HardDeleteRegistration)
 
+	admin.Put("/participants/:id", adminHandler.UpdateParticipant)
 	admin.Delete("/participants/:id", adminHandler.SoftDeleteParticipant)
 	admin.Put("/participants/:id/restore", adminHandler.RestoreParticipant)
 	admin.Delete("/participants/:id/permanent", adminHandler.HardDeleteParticipant)

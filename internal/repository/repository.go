@@ -146,35 +146,13 @@ func (r *Repository) SeedInitialData() error {
 		tourneys := []domain.Tournament{
 			{
 				ID:                    1,
-				Name:                  "KEJUARAAN TIME TRIAL AKUATIK INDONESIA 2026",
+				Name:                  "TIME TRIAL 2026 MASC KOTA TANGERANG",
 				Description:           "Kejuaraan time trial renang resmi berstandar PRSI / FINA untuk menjaring bibit atlet nasional.",
 				Location:              "Kolam Renang Gelanggang Kota Tangerang",
 				RegistrationStartDate: "2026-01-01",
 				RegistrationEndDate:   "2026-12-31",
 				EventStartDate:        "2026-10-01",
 				EventEndDate:          "2026-10-03",
-				IsActive:              true,
-			},
-			{
-				ID:                    2,
-				Name:                  "TURNAMEN RENANG HUT RI 17 2027",
-				Description:           "Turnamen spesial memperingati Kemerdekaan RI ke-82 dengan total hadiah puluhan juta rupiah.",
-				Location:              "Kolam Renang Senayan Jakarta",
-				RegistrationStartDate: "2027-07-01",
-				RegistrationEndDate:   "2027-08-10",
-				EventStartDate:        "2027-08-17",
-				EventEndDate:          "2027-08-18",
-				IsActive:              true,
-			},
-			{
-				ID:                    3,
-				Name:                  "KEJUARAAN RENANG PELAJAR TERBUKA 2025",
-				Description:           "Kejuaraan tingkat pelajar se-Jabodetabek (Pendaftaran Telah Ditutup).",
-				Location:              "Kolam Renang Cikini Jakarta",
-				RegistrationStartDate: "2025-01-01",
-				RegistrationEndDate:   "2025-02-01",
-				EventStartDate:        "2025-02-15",
-				EventEndDate:          "2025-02-16",
 				IsActive:              true,
 			},
 		}
@@ -849,6 +827,16 @@ func (r *Repository) HardDeleteParticipant(participantID uint) error {
 	})
 }
 
+func (r *Repository) FindParticipantByID(id uint) (*domain.Participant, error) {
+	var p domain.Participant
+	err := r.db.First(&p, id).Error
+	return &p, err
+}
+
+func (r *Repository) UpdateParticipant(p *domain.Participant) error {
+	return r.db.Save(p).Error
+}
+
 // SoftDeleteRegistration marks a single registration as inactive
 func (r *Repository) SoftDeleteRegistration(id uint) error {
 	return r.db.Model(&domain.Registration{}).Where("id = ?", id).Updates(map[string]interface{}{
@@ -885,6 +873,20 @@ func (r *Repository) HardDeleteRegistration(id uint) error {
 
 func (r *Repository) UpdateRegistrationStatus(id uint, status string) error {
 	return r.db.Model(&domain.Registration{}).Where("id = ?", id).Update("payment_status", status).Error
+}
+
+func (r *Repository) UpdateRegistrationGroupPayment(code string, proofURL, paymentMethod, senderBank string) error {
+	updates := map[string]interface{}{
+		"payment_proof_url": proofURL,
+		"payment_status":    "pending",
+	}
+	if paymentMethod != "" {
+		updates["payment_method"] = paymentMethod
+	}
+	if senderBank != "" {
+		updates["sender_bank_owner"] = senderBank
+	}
+	return r.db.Model(&domain.Registration{}).Where("registration_code = ?", code).Updates(updates).Error
 }
 
 func (r *Repository) FindPoolConfig() (*domain.PoolConfig, error) {

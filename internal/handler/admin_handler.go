@@ -104,6 +104,23 @@ func (h *AdminHandler) HardDeleteParticipant(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "Peserta berhasil dihapus secara permanen dari database", nil)
 }
 
+func (h *AdminHandler) UpdateParticipant(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "ID peserta tidak valid", nil)
+	}
+	var req dto.UpdateParticipantRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Format payload tidak valid", err.Error())
+	}
+	updated, err := h.svc.UpdateParticipant(uint(id), req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Data peserta berhasil diperbarui", updated)
+}
+
 func (h *AdminHandler) SoftDeleteRegistration(c *fiber.Ctx) error {
 	idStr := c.Params("id")
 	id, err := strconv.ParseUint(idStr, 10, 64)

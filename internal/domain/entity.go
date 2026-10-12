@@ -99,6 +99,7 @@ type SwimmingEvent struct {
 	Gender       string      `gorm:"size:20;not null" json:"gender"`       // PUTRA, PUTRI
 	AgeGroup     string      `gorm:"size:50;default:'OPEN'" json:"age_group"` // KU 6A, KU 6B, KU 5, KU 4, KU 3, KU 2, KU 1, Senior, OPEN
 	Fee          float64     `gorm:"default:150000" json:"fee"`
+	ScheduleDate string      `gorm:"size:50;default:''" json:"schedule_date"`
 	ScheduleTime string      `gorm:"size:100;default:'08:00 WIB'" json:"schedule_time"`
 	HeatCategory string      `gorm:"size:50;default:'HEAT'" json:"heat_category"` // "HEAT" or "GROUP"
 	IsActive     bool        `gorm:"default:true" json:"is_active"`
@@ -144,6 +145,7 @@ type Registration struct {
 	FinalResultTime  string        `gorm:"size:50" json:"final_result_time"`   // Catatan waktu hasil babak final
 	FinalRank        int           `gorm:"default:0" json:"final_rank"`          // Juara 1, 2, 3 akhir babak final
 	IsFinalist       bool          `gorm:"default:false" json:"is_finalist"`   // Apakah lolos ke babak final
+	IsAdditional     bool          `gorm:"default:false" json:"is_additional"` // Ditandai jika merupakan pendaftaran penambahan nomor lomba
 	IsActive         bool          `gorm:"default:true" json:"is_active"`
 	CreatedAt        time.Time     `json:"created_at"`
 	UpdatedAt        time.Time     `json:"updated_at"`
@@ -383,9 +385,11 @@ type TimeTrialStroke struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	EventCode string    `gorm:"size:50;not null" json:"event_code"` // e.g. TT-01, TT-02
 	Name      string    `gorm:"size:255;not null" json:"name"`       // e.g. 50 METER GAYA BEBAS
-	Distance  string    `gorm:"size:50;not null" json:"distance"`   // 25 METER, 50 METER, 100 METER
-	Stroke    string    `gorm:"size:50;not null" json:"stroke"`     // FREESTYLE, BREASTSTROKE, BACKSTROKE, BUTTERFLY, INDIVIDUAL_MEDLEY, KICKING_BOARD, FIN
-	SortOrder int       `gorm:"default:0" json:"sort_order"`
+	Distance     string    `gorm:"size:50;not null" json:"distance"`   // 25 METER, 50 METER, 100 METER
+	Stroke       string    `gorm:"size:50;not null" json:"stroke"`     // FREESTYLE, BREASTSTROKE, BACKSTROKE, BUTTERFLY, INDIVIDUAL_MEDLEY, KICKING_BOARD, FIN
+	ScheduleDate string    `gorm:"size:50;default:''" json:"schedule_date"`
+	ScheduleTime string    `gorm:"size:50;default:'08:00 WIB'" json:"schedule_time"`
+	SortOrder    int       `gorm:"default:0" json:"sort_order"`
 	IsActive  bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -428,6 +432,8 @@ type TimeTrialHeat struct {
 	StrokeID   uint              `gorm:"index;not null" json:"stroke_id"`
 	Stroke     *TimeTrialStroke  `gorm:"foreignKey:StrokeID" json:"stroke,omitempty"`
 	HeatNumber int               `gorm:"not null" json:"heat_number"` // 1, 2, 3...
+	Date       string            `gorm:"size:50;default:''" json:"date"`
+	StartTime  string            `gorm:"size:50;default:''" json:"start_time"`
 	Notes      string            `gorm:"size:255" json:"notes"`
 	Lanes      []TimeTrialLane   `gorm:"foreignKey:HeatID;constraint:OnDelete:CASCADE" json:"lanes,omitempty"`
 	CreatedAt  time.Time         `json:"created_at"`
@@ -436,13 +442,14 @@ type TimeTrialHeat struct {
 
 // TimeTrialLane represents a lane inside a manual heat with participant and speed results
 type TimeTrialLane struct {
-	ID         uint             `gorm:"primaryKey" json:"id"`
-	HeatID     uint             `gorm:"index;not null" json:"heat_id"`
-	LaneNumber int              `gorm:"not null" json:"lane_number"` // 1, 2, 3... up to MaxLanes
-	EntryID    *uint            `gorm:"index" json:"entry_id,omitempty"`
-	Entry      *TimeTrialEntry  `gorm:"foreignKey:EntryID" json:"entry,omitempty"`
-	MemberID   *uint            `gorm:"index" json:"member_id,omitempty"`
-	Member     *ClubMember      `gorm:"foreignKey:MemberID" json:"member,omitempty"`
+	ID         uint              `gorm:"primaryKey" json:"id"`
+	HeatID     uint              `gorm:"index;not null" json:"heat_id"`
+	Heat       *TimeTrialHeat    `gorm:"foreignKey:HeatID" json:"heat,omitempty"`
+	LaneNumber int               `gorm:"not null" json:"lane_number"` // 1, 2, 3... up to MaxLanes
+	EntryID    *uint             `gorm:"index" json:"entry_id,omitempty"`
+	Entry      *TimeTrialEntry   `gorm:"foreignKey:EntryID" json:"entry,omitempty"`
+	MemberID   *uint             `gorm:"index" json:"member_id,omitempty"`
+	Member     *ClubMember       `gorm:"foreignKey:MemberID" json:"member,omitempty"`
 	ResultTime string           `gorm:"size:50" json:"result_time"` // mm.ss.ms or NT
 	Status     string           `gorm:"size:50;default:'OK'" json:"status"` // OK, DNS, DNF, DQ
 	Rank       int              `gorm:"default:0" json:"rank"`

@@ -64,6 +64,7 @@ type UserDetailResponse struct {
 }
 
 type RegisterParticipantRequest struct {
+	RegistrationCode    string                 `json:"registration_code"` // Optional: jika re-registrasi / tambah nomor lomba
 	Name                string                 `json:"name" binding:"required"`
 	Gender              string                 `json:"gender" binding:"required"`
 	Club                string                 `json:"club" binding:"required"`
@@ -95,6 +96,17 @@ type RegisterParticipantResponse struct {
 
 type VerificationRequest struct {
 	PaymentStatus string `json:"payment_status"` // verified / rejected
+}
+
+type UpdateParticipantRequest struct {
+	Name      string `json:"name"`
+	Gender    string `json:"gender"`
+	Club      string `json:"club"`
+	PIC       string `json:"pic"`
+	Contact   string `json:"contact"`
+	Email     string `json:"email"`
+	BirthDate string `json:"birth_date"`
+	AgeGroup  string `json:"age_group"`
 }
 
 type GenerateBukuAcaraRequest struct {
@@ -163,6 +175,8 @@ type BukuAcaraHeatItemDTO struct {
 	IsFinalist        bool   `json:"is_finalist"`
 	PreliminaryResult string `json:"preliminary_result,omitempty"`
 	PreliminaryRank   int    `json:"preliminary_rank,omitempty"`
+	ScheduleDate      string `json:"schedule_date,omitempty"`
+	ScheduleTime      string `json:"schedule_time,omitempty"`
 }
 
 type BukuAcaraEventGroupDTO struct {
@@ -174,6 +188,8 @@ type BukuAcaraEventGroupDTO struct {
 	Stroke       string                 `json:"stroke"`
 	Gender       string                 `json:"gender"`
 	AgeGroup     string                 `json:"age_group"`
+	ScheduleDate string                 `json:"schedule_date"`
+	ScheduleTime string                 `json:"schedule_time"`
 	HeatCategory string                 `json:"heat_category"`
 	MaxLanes     int                    `json:"max_lanes"`
 	Round        string                 `json:"round"`

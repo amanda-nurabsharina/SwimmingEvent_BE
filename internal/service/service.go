@@ -198,27 +198,89 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 		}
 	}
 
-	// Generate Unique Registration Code matching format REG-ASC-XXXXX
-	bytes := make([]byte, 2)
-	_, _ = rand.Read(bytes)
-	numRand := 10000 + (int(bytes[0])<<8|int(bytes[1]))%90000
-	regCode := fmt.Sprintf("REG-ASC-%d", numRand)
+	var regCode string
+	var participant domain.Participant
+	isAdditional := false
 
-	participant := domain.Participant{
-		Name:                req.Name,
-		Gender:              req.Gender,
-		Club:                req.Club,
-		PIC:                 req.PIC,
-		Contact:             req.Contact,
-		Email:               req.Email,
-		BirthDate:           req.BirthDate,
-		AgeGroup:            req.AgeGroup,
-		VerificationDocType: req.VerificationDocType,
-		VerificationDocURL:  req.VerificationDocURL,
+	if strings.TrimSpace(req.RegistrationCode) != "" {
+		trimmedCode := strings.TrimSpace(req.RegistrationCode)
+		existingRegs, err := s.repo.FindRegistrationByCode(trimmedCode)
+		if err == nil && len(existingRegs) > 0 {
+			regCode = trimmedCode
+			isAdditional = true
+			if existingRegs[0].ParticipantID != 0 {
+				p, errP := s.repo.FindParticipantByID(existingRegs[0].ParticipantID)
+				if errP == nil && p != nil {
+					participant = *p
+				} else {
+					participant = existingRegs[0].Participant
+				}
+			} else {
+				participant = existingRegs[0].Participant
+			}
+
+			// Combine existing payment proofs and new payment proofs if any
+			proofMap := make(map[string]bool)
+			var combinedProofs []string
+
+			addProofs := func(raw string) {
+				parts := strings.Split(raw, ",")
+				for _, p := range parts {
+					p = strings.TrimSpace(p)
+					if p != "" && !proofMap[p] {
+						proofMap[p] = true
+						combinedProofs = append(combinedProofs, p)
+					}
+				}
+			}
+
+			for _, er := range existingRegs {
+				if er.PaymentProofURL != "" {
+					addProofs(er.PaymentProofURL)
+				}
+			}
+			if req.PaymentProofURL != "" {
+				addProofs(req.PaymentProofURL)
+			}
+
+			if len(combinedProofs) > 0 {
+				req.PaymentProofURL = strings.Join(combinedProofs, ",")
+			}
+			if req.PaymentMethod == "" {
+				req.PaymentMethod = existingRegs[0].PaymentMethod
+			}
+			if req.SenderBankOwner == "" {
+				req.SenderBankOwner = existingRegs[0].SenderBankOwner
+			}
+
+			// Update all existing registrations for this code to pending status with combined payment proof
+			_ = s.repo.UpdateRegistrationGroupPayment(regCode, req.PaymentProofURL, req.PaymentMethod, req.SenderBankOwner)
+		}
 	}
 
-	if err := s.repo.CreateParticipant(&participant); err != nil {
-		return nil, fmt.Errorf("failed to save participant details: %v", err)
+	if !isAdditional {
+		// Generate Unique Registration Code matching format REG-ASC-XXXXX
+		bytes := make([]byte, 2)
+		_, _ = rand.Read(bytes)
+		numRand := 10000 + (int(bytes[0])<<8|int(bytes[1]))%90000
+		regCode = fmt.Sprintf("REG-ASC-%d", numRand)
+
+		participant = domain.Participant{
+			Name:                req.Name,
+			Gender:              req.Gender,
+			Club:                req.Club,
+			PIC:                 req.PIC,
+			Contact:             req.Contact,
+			Email:               req.Email,
+			BirthDate:           req.BirthDate,
+			AgeGroup:            req.AgeGroup,
+			VerificationDocType: req.VerificationDocType,
+			VerificationDocURL:  req.VerificationDocURL,
+		}
+
+		if err := s.repo.CreateParticipant(&participant); err != nil {
+			return nil, fmt.Errorf("failed to save participant details: %v", err)
+		}
 	}
 
 	totalEvents := 0
@@ -226,6 +288,20 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 		timeSeed := selection.TimeSeed
 		if timeSeed == "" || timeSeed == "NT" {
 			timeSeed = "99:99.99"
+		}
+
+		if isAdditional {
+			existingRegs, _ := s.repo.FindRegistrationByCode(regCode)
+			isDuplicate := false
+			for _, er := range existingRegs {
+				if er.SwimmingEventID == selection.SwimmingEventID && er.IsActive {
+					isDuplicate = true
+					break
+				}
+			}
+			if isDuplicate {
+				continue
+			}
 		}
 
 		reg := domain.Registration{
@@ -237,6 +313,8 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 			PaymentMethod:    req.PaymentMethod,
 			SenderBankOwner:  req.SenderBankOwner,
 			PaymentProofURL:  req.PaymentProofURL,
+			IsAdditional:     isAdditional,
+			IsActive:         true,
 		}
 
 		if err := s.repo.CreateRegistration(&reg); err != nil {
@@ -246,12 +324,21 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 		}
 	}
 
+	if isAdditional && totalEvents == 0 {
+		return nil, fmt.Errorf("nomor lomba yang dipilih sudah terdaftar sebelumnya pada kode registrasi ini")
+	}
+
+	msg := "Pendaftaran berhasil dikirim! Silakan lakukan pembayaran dan periksa status secara berkala."
+	if isAdditional {
+		msg = fmt.Sprintf("Penambahan nomor lomba berhasil didaftarkan untuk kode %s! Menunggu verifikasi admin.", regCode)
+	}
+
 	return &dto.RegisterParticipantResponse{
 		RegistrationCode: regCode,
 		ParticipantName:  participant.Name,
 		TotalEvents:      totalEvents,
 		PaymentStatus:    "pending",
-		Message:          "Pendaftaran berhasil dikirim! Silakan lakukan pembayaran dan periksa status secara berkala.",
+		Message:          msg,
 	}, nil
 }
 
@@ -681,6 +768,23 @@ func (s *Service) GetBukuAcara(tournamentID uint, round string) ([]dto.BukuAcara
 			roundStr = "final"
 		}
 
+		schedDate := ev.ScheduleDate
+		if schedDate == "" && ev.Tournament != nil && ev.Tournament.EventStartDate != "" {
+			schedDate = ev.Tournament.EventStartDate
+		}
+		if schedDate == "" {
+			schedDate = "2026-10-01"
+		}
+		schedTime := ev.ScheduleTime
+		if schedTime == "" {
+			schedTime = "08:00 WIB"
+		}
+
+		for idx := range heatItems {
+			heatItems[idx].ScheduleDate = schedDate
+			heatItems[idx].ScheduleTime = schedTime
+		}
+
 		result = append(result, dto.BukuAcaraEventGroupDTO{
 			EventID:      ev.ID,
 			TournamentID: ev.TournamentID,
@@ -690,6 +794,8 @@ func (s *Service) GetBukuAcara(tournamentID uint, round string) ([]dto.BukuAcara
 			Stroke:       ev.Stroke,
 			Gender:       ev.Gender,
 			AgeGroup:     ev.AgeGroup,
+			ScheduleDate: schedDate,
+			ScheduleTime: schedTime,
 			HeatCategory: heatCategoryStr,
 			MaxLanes:     maxLanes,
 			Round:        roundStr,
@@ -726,6 +832,43 @@ func (s *Service) RestoreParticipant(participantID uint) error {
 
 func (s *Service) HardDeleteParticipant(participantID uint) error {
 	return s.repo.HardDeleteParticipant(participantID)
+}
+
+func (s *Service) UpdateParticipant(participantID uint, req dto.UpdateParticipantRequest) (*domain.Participant, error) {
+	p, err := s.repo.FindParticipantByID(participantID)
+	if err != nil {
+		return nil, fmt.Errorf("peserta tidak ditemukan")
+	}
+
+	if req.Name != "" {
+		p.Name = strings.TrimSpace(req.Name)
+	}
+	if req.Gender != "" {
+		p.Gender = strings.ToUpper(strings.TrimSpace(req.Gender))
+	}
+	if req.Club != "" {
+		p.Club = strings.TrimSpace(req.Club)
+	}
+	if req.PIC != "" {
+		p.PIC = strings.TrimSpace(req.PIC)
+	}
+	if req.Contact != "" {
+		p.Contact = strings.TrimSpace(req.Contact)
+	}
+	if req.Email != "" {
+		p.Email = strings.TrimSpace(req.Email)
+	}
+	if req.BirthDate != "" {
+		p.BirthDate = strings.TrimSpace(req.BirthDate)
+	}
+	if req.AgeGroup != "" {
+		p.AgeGroup = strings.TrimSpace(req.AgeGroup)
+	}
+
+	if err := s.repo.UpdateParticipant(p); err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 func (s *Service) SoftDeleteRegistration(registrationID uint) error {
