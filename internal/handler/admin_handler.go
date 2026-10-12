@@ -1009,6 +1009,318 @@ func (h *AdminHandler) DeleteUser(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "User deleted successfully", nil)
 }
 
+// ----------------------------------------------------------------------
+// MASC CLUB MEMBER & TIME TRIAL HANDLERS
+// ----------------------------------------------------------------------
+
+// 1. Club Members
+func (h *AdminHandler) GetClubMembers(c *fiber.Ctx) error {
+	search := c.Query("search", "")
+	status := c.Query("status", "")
+	gender := c.Query("gender", "")
+	members, err := h.svc.GetClubMembers(search, status, gender)
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch club members", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Club members fetched successfully", members)
+}
+
+func (h *AdminHandler) GetClubMemberByID(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid member ID", nil)
+	}
+	member, err := h.svc.GetClubMemberByID(uint(id))
+	if err != nil {
+		return response.Error(c, fiber.StatusNotFound, "Club member not found", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Club member fetched successfully", member)
+}
+
+func (h *AdminHandler) CreateClubMember(c *fiber.Ctx) error {
+	var m domain.ClubMember
+	if err := c.BodyParser(&m); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+	if err := h.svc.CreateClubMember(&m); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusCreated, "Club member created successfully", m)
+}
+
+func (h *AdminHandler) UpdateClubMember(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid member ID", nil)
+	}
+	var m domain.ClubMember
+	if err := c.BodyParser(&m); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+	m.ID = uint(id)
+	if err := h.svc.UpdateClubMember(&m); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Club member updated successfully", m)
+}
+
+func (h *AdminHandler) DeleteClubMember(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid member ID", nil)
+	}
+	if err := h.svc.DeleteClubMember(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Club member deleted successfully", nil)
+}
+
+func (h *AdminHandler) GetClubMemberSpeedHistory(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid member ID", nil)
+	}
+	history, err := h.svc.GetClubMemberSpeedHistory(uint(id))
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch speed history", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Speed history fetched successfully", history)
+}
+
+// 2. Time Trial Strokes
+func (h *AdminHandler) GetTimeTrialStrokes(c *fiber.Ctx) error {
+	strokes, err := h.svc.GetTimeTrialStrokes()
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch strokes", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Strokes fetched successfully", strokes)
+}
+
+func (h *AdminHandler) CreateTimeTrialStroke(c *fiber.Ctx) error {
+	var s domain.TimeTrialStroke
+	if err := c.BodyParser(&s); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+	if err := h.svc.CreateTimeTrialStroke(&s); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusCreated, "Stroke created successfully", s)
+}
+
+func (h *AdminHandler) UpdateTimeTrialStroke(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid stroke ID", nil)
+	}
+	var s domain.TimeTrialStroke
+	if err := c.BodyParser(&s); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+	s.ID = uint(id)
+	if err := h.svc.UpdateTimeTrialStroke(&s); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Stroke updated successfully", s)
+}
+
+func (h *AdminHandler) DeleteTimeTrialStroke(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid stroke ID", nil)
+	}
+	if err := h.svc.DeleteTimeTrialStroke(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Stroke deleted successfully", nil)
+}
+
+// 3. Time Trial Sessions
+func (h *AdminHandler) GetTimeTrialSessions(c *fiber.Ctx) error {
+	sessions, err := h.svc.GetTimeTrialSessions()
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch sessions", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Sessions fetched successfully", sessions)
+}
+
+func (h *AdminHandler) GetTimeTrialSessionByID(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid session ID", nil)
+	}
+	session, err := h.svc.GetTimeTrialSessionByID(uint(id))
+	if err != nil {
+		return response.Error(c, fiber.StatusNotFound, "Session not found", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Session fetched successfully", session)
+}
+
+func (h *AdminHandler) CreateTimeTrialSession(c *fiber.Ctx) error {
+	var s domain.TimeTrialSession
+	if err := c.BodyParser(&s); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+	if err := h.svc.CreateTimeTrialSession(&s); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusCreated, "Session created successfully", s)
+}
+
+func (h *AdminHandler) UpdateTimeTrialSession(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid session ID", nil)
+	}
+	var s domain.TimeTrialSession
+	if err := c.BodyParser(&s); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+	s.ID = uint(id)
+	if err := h.svc.UpdateTimeTrialSession(&s); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Session updated successfully", s)
+}
+
+func (h *AdminHandler) DeleteTimeTrialSession(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid session ID", nil)
+	}
+	if err := h.svc.DeleteTimeTrialSession(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Session deleted successfully", nil)
+}
+
+// 4. Time Trial Entries (Assign Member)
+func (h *AdminHandler) GetTimeTrialEntries(c *fiber.Ctx) error {
+	sessionID, _ := strconv.Atoi(c.Query("session_id", "0"))
+	strokeID, _ := strconv.Atoi(c.Query("stroke_id", "0"))
+	if sessionID <= 0 {
+		return response.Error(c, fiber.StatusBadRequest, "Parameter session_id required", nil)
+	}
+	entries, err := h.svc.GetTimeTrialEntries(uint(sessionID), uint(strokeID))
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch entries", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Entries fetched successfully", entries)
+}
+
+func (h *AdminHandler) CreateTimeTrialEntry(c *fiber.Ctx) error {
+	var req struct {
+		SessionID uint   `json:"session_id"`
+		MemberID  uint   `json:"member_id"`
+		StrokeID  uint   `json:"stroke_id"`
+		SeedTime  string `json:"seed_time"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+	entry := domain.TimeTrialEntry{
+		SessionID: req.SessionID,
+		MemberID:  req.MemberID,
+		StrokeID:  req.StrokeID,
+		SeedTime:  req.SeedTime,
+	}
+	if err := h.svc.CreateTimeTrialEntry(&entry); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusCreated, "Entry registered successfully", entry)
+}
+
+func (h *AdminHandler) DeleteTimeTrialEntry(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid entry ID", nil)
+	}
+	if err := h.svc.DeleteTimeTrialEntry(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Entry removed successfully", nil)
+}
+
+// 5. Time Trial Heats & Lanes (Manual Dynamic Heat Builder)
+func (h *AdminHandler) GetTimeTrialHeats(c *fiber.Ctx) error {
+	sessionID, _ := strconv.Atoi(c.Query("session_id", "0"))
+	strokeID, _ := strconv.Atoi(c.Query("stroke_id", "0"))
+	if sessionID <= 0 {
+		return response.Error(c, fiber.StatusBadRequest, "Parameter session_id required", nil)
+	}
+	heats, err := h.svc.GetTimeTrialHeats(uint(sessionID), uint(strokeID))
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Failed to fetch heats", err.Error())
+	}
+	return response.Success(c, fiber.StatusOK, "Heats fetched successfully", heats)
+}
+
+func (h *AdminHandler) CreateTimeTrialHeat(c *fiber.Ctx) error {
+	var req struct {
+		SessionID  uint   `json:"session_id"`
+		StrokeID   uint   `json:"stroke_id"`
+		HeatNumber int    `json:"heat_number"`
+		Notes      string `json:"notes"`
+		MaxLanes   int    `json:"max_lanes"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+	if err := h.svc.CreateTimeTrialHeat(req.SessionID, req.StrokeID, req.HeatNumber, req.Notes, req.MaxLanes); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusCreated, "Heat created successfully", nil)
+}
+
+func (h *AdminHandler) DeleteTimeTrialHeat(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid heat ID", nil)
+	}
+	if err := h.svc.DeleteTimeTrialHeat(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Heat deleted successfully", nil)
+}
+
+func (h *AdminHandler) UpdateTimeTrialLane(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid lane ID", nil)
+	}
+	var req struct {
+		MemberID   *uint  `json:"member_id"`
+		EntryID    *uint  `json:"entry_id"`
+		ResultTime string `json:"result_time"`
+		Status     string `json:"status"`
+		CoachNotes string `json:"coach_notes"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+	if err := h.svc.UpdateTimeTrialLane(uint(id), req.MemberID, req.EntryID, req.ResultTime, req.Status, req.CoachNotes); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Lane updated successfully", nil)
+}
+
+func (h *AdminHandler) CalculateTimeTrialRanks(c *fiber.Ctx) error {
+	var req struct {
+		SessionID uint `json:"session_id"`
+		StrokeID  uint `json:"stroke_id"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload", err.Error())
+	}
+	if req.SessionID == 0 || req.StrokeID == 0 {
+		return response.Error(c, fiber.StatusBadRequest, "Session ID and Stroke ID required", nil)
+	}
+	if err := h.svc.CalculateTimeTrialRanks(req.SessionID, req.StrokeID); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Ranks calculated successfully", nil)
+}
+
+
 
 
 

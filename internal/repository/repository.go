@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"serve-swimming-be/internal/domain"
@@ -50,6 +51,12 @@ func (r *Repository) AutoMigrate() error {
 		&domain.AchievementSectionConfig{},
 		&domain.Testimonial{},
 		&domain.TestimonialSectionConfig{},
+		&domain.ClubMember{},
+		&domain.TimeTrialStroke{},
+		&domain.TimeTrialSession{},
+		&domain.TimeTrialEntry{},
+		&domain.TimeTrialHeat{},
+		&domain.TimeTrialLane{},
 	)
 	if err != nil {
 		return err
@@ -715,6 +722,31 @@ func (r *Repository) SeedInitialData() error {
 			{PageSlug: "homepage", SectionCode: "status_checker", BadgeText: "CEK STATUS", Title: "Cek Status & Validasi Pendaftaran", Description: "Form pelacakan resi pendaftaran peserta secara publik", SortOrder: 8, IsPublished: true},
 		}
 		for _, s := range defaultSections {
+			r.db.Create(&s)
+		}
+	}
+
+	// 6. Default Time Trial Strokes
+	var ttStrokeCount int64
+	r.db.Model(&domain.TimeTrialStroke{}).Count(&ttStrokeCount)
+	if ttStrokeCount == 0 {
+		defaultStrokes := []domain.TimeTrialStroke{
+			{EventCode: "TT-01", Name: "25 METER GAYA BEBAS", Distance: "25 METER", Stroke: "FREESTYLE", SortOrder: 1, IsActive: true},
+			{EventCode: "TT-02", Name: "50 METER GAYA BEBAS", Distance: "50 METER", Stroke: "FREESTYLE", SortOrder: 2, IsActive: true},
+			{EventCode: "TT-03", Name: "100 METER GAYA BEBAS", Distance: "100 METER", Stroke: "FREESTYLE", SortOrder: 3, IsActive: true},
+			{EventCode: "TT-04", Name: "25 METER GAYA DADA", Distance: "25 METER", Stroke: "BREASTSTROKE", SortOrder: 4, IsActive: true},
+			{EventCode: "TT-05", Name: "50 METER GAYA DADA", Distance: "50 METER", Stroke: "BREASTSTROKE", SortOrder: 5, IsActive: true},
+			{EventCode: "TT-06", Name: "100 METER GAYA DADA", Distance: "100 METER", Stroke: "BREASTSTROKE", SortOrder: 6, IsActive: true},
+			{EventCode: "TT-07", Name: "25 METER GAYA PUNGGUNG", Distance: "25 METER", Stroke: "BACKSTROKE", SortOrder: 7, IsActive: true},
+			{EventCode: "TT-08", Name: "50 METER GAYA PUNGGUNG", Distance: "50 METER", Stroke: "BACKSTROKE", SortOrder: 8, IsActive: true},
+			{EventCode: "TT-09", Name: "25 METER GAYA KUPU-KUPU", Distance: "25 METER", Stroke: "BUTTERFLY", SortOrder: 9, IsActive: true},
+			{EventCode: "TT-10", Name: "50 METER GAYA KUPU-KUPU", Distance: "50 METER", Stroke: "BUTTERFLY", SortOrder: 10, IsActive: true},
+			{EventCode: "TT-11", Name: "25 METER KICKING BOARD", Distance: "25 METER", Stroke: "KICKING_BOARD", SortOrder: 11, IsActive: true},
+			{EventCode: "TT-12", Name: "50 METER KICKING BOARD", Distance: "50 METER", Stroke: "KICKING_BOARD", SortOrder: 12, IsActive: true},
+			{EventCode: "TT-13", Name: "50 METER FREESTYLE FIN", Distance: "50 METER", Stroke: "FREESTYLE_FIN", SortOrder: 13, IsActive: true},
+			{EventCode: "TT-14", Name: "100 METER INDIVIDUAL MEDLEY", Distance: "100 METER", Stroke: "INDIVIDUAL_MEDLEY", SortOrder: 14, IsActive: true},
+		}
+		for _, s := range defaultStrokes {
 			r.db.Create(&s)
 		}
 	}
@@ -1485,6 +1517,328 @@ func (r *Repository) UpdateUser(user *domain.User) error {
 func (r *Repository) DeleteUser(id uint) error {
 	return r.db.Delete(&domain.User{}, id).Error
 }
+
+// ----------------------------------------------------------------------
+// MASC CLUB MEMBERS & TIME TRIAL SYSTEM
+// ----------------------------------------------------------------------
+
+// 1. Club Member
+func (r *Repository) FindClubMembers(search, status, gender string) ([]domain.ClubMember, error) {
+	var members []domain.ClubMember
+	query := r.db.Model(&domain.ClubMember{})
+	if search != "" {
+		s := "%" + strings.ToLower(strings.TrimSpace(search)) + "%"
+		query = query.Where("LOWER(full_name) LIKE ? OR LOWER(member_number) LIKE ? OR LOWER(nickname) LIKE ? OR phone LIKE ?", s, s, s, s)
+	}
+	if status != "" && status != "all" {
+		query = query.Where("status = ?", status)
+	}
+	if gender != "" && gender != "all" {
+		query = query.Where("gender = ?", gender)
+	}
+	err := query.Order("member_number ASC, full_name ASC").Find(&members).Error
+	return members, err
+}
+
+func (r *Repository) FindClubMemberByID(id uint) (*domain.ClubMember, error) {
+	var member domain.ClubMember
+	err := r.db.First(&member, id).Error
+	return &member, err
+}
+
+func (r *Repository) CreateClubMember(m *domain.ClubMember) error {
+	return r.db.Create(m).Error
+}
+
+func (r *Repository) UpdateClubMember(m *domain.ClubMember) error {
+	return r.db.Save(m).Error
+}
+
+func (r *Repository) DeleteClubMember(id uint) error {
+	// Cascade unlink from time trial entries and lanes
+	_ = r.db.Model(&domain.TimeTrialLane{}).Where("member_id = ?", id).Updates(map[string]interface{}{
+		"member_id": nil,
+		"entry_id":  nil,
+	})
+	_ = r.db.Where("member_id = ?", id).Delete(&domain.TimeTrialEntry{})
+	return r.db.Delete(&domain.ClubMember{}, id).Error
+}
+
+func (r *Repository) GetClubMemberSpeedHistory(memberID uint) ([]domain.TimeTrialLane, error) {
+	var lanes []domain.TimeTrialLane
+	err := r.db.Preload("Heat.Stroke").Preload("Heat.Session").
+		Joins("JOIN time_trial_heats ON time_trial_heats.id = time_trial_lanes.heat_id").
+		Where("time_trial_lanes.member_id = ? AND time_trial_lanes.result_time != '' AND time_trial_lanes.result_time IS NOT NULL", memberID).
+		Order("time_trial_lanes.created_at DESC").
+		Find(&lanes).Error
+	return lanes, err
+}
+
+// 2. Time Trial Stroke
+func (r *Repository) FindTimeTrialStrokes() ([]domain.TimeTrialStroke, error) {
+	var strokes []domain.TimeTrialStroke
+	err := r.db.Order("sort_order ASC, event_code ASC").Find(&strokes).Error
+	return strokes, err
+}
+
+func (r *Repository) FindTimeTrialStrokeByID(id uint) (*domain.TimeTrialStroke, error) {
+	var stroke domain.TimeTrialStroke
+	err := r.db.First(&stroke, id).Error
+	return &stroke, err
+}
+
+func (r *Repository) CreateTimeTrialStroke(s *domain.TimeTrialStroke) error {
+	return r.db.Create(s).Error
+}
+
+func (r *Repository) UpdateTimeTrialStroke(s *domain.TimeTrialStroke) error {
+	return r.db.Save(s).Error
+}
+
+func (r *Repository) DeleteTimeTrialStroke(id uint) error {
+	return r.db.Delete(&domain.TimeTrialStroke{}, id).Error
+}
+
+// 3. Time Trial Session
+func (r *Repository) FindTimeTrialSessions() ([]domain.TimeTrialSession, error) {
+	var sessions []domain.TimeTrialSession
+	err := r.db.Order("date DESC, id DESC").Find(&sessions).Error
+	return sessions, err
+}
+
+func (r *Repository) FindTimeTrialSessionByID(id uint) (*domain.TimeTrialSession, error) {
+	var session domain.TimeTrialSession
+	err := r.db.First(&session, id).Error
+	return &session, err
+}
+
+func (r *Repository) CreateTimeTrialSession(s *domain.TimeTrialSession) error {
+	return r.db.Create(s).Error
+}
+
+func (r *Repository) UpdateTimeTrialSession(s *domain.TimeTrialSession) error {
+	return r.db.Save(s).Error
+}
+
+func (r *Repository) DeleteTimeTrialSession(id uint) error {
+	var heats []domain.TimeTrialHeat
+	r.db.Where("session_id = ?", id).Find(&heats)
+	for _, h := range heats {
+		_ = r.db.Where("heat_id = ?", h.ID).Delete(&domain.TimeTrialLane{})
+	}
+	_ = r.db.Where("session_id = ?", id).Delete(&domain.TimeTrialHeat{})
+	_ = r.db.Where("session_id = ?", id).Delete(&domain.TimeTrialEntry{})
+	return r.db.Delete(&domain.TimeTrialSession{}, id).Error
+}
+
+// 4. Time Trial Entry (Assign Member to Stroke in Session)
+func (r *Repository) FindTimeTrialEntries(sessionID uint, strokeID uint) ([]domain.TimeTrialEntry, error) {
+	var entries []domain.TimeTrialEntry
+	query := r.db.Preload("Member").Preload("Stroke").Where("session_id = ?", sessionID)
+	if strokeID > 0 {
+		query = query.Where("stroke_id = ?", strokeID)
+	}
+	err := query.Order("id ASC").Find(&entries).Error
+	return entries, err
+}
+
+func (r *Repository) CreateTimeTrialEntry(entry *domain.TimeTrialEntry) error {
+	var existing domain.TimeTrialEntry
+	if err := r.db.Where("session_id = ? AND stroke_id = ? AND member_id = ?", entry.SessionID, entry.StrokeID, entry.MemberID).First(&existing).Error; err == nil {
+		existing.SeedTime = entry.SeedTime
+		return r.db.Save(&existing).Error
+	}
+	return r.db.Create(entry).Error
+}
+
+func (r *Repository) DeleteTimeTrialEntry(id uint) error {
+	_ = r.db.Model(&domain.TimeTrialLane{}).Where("entry_id = ?", id).Updates(map[string]interface{}{
+		"entry_id":    nil,
+		"member_id":   nil,
+		"result_time": "",
+		"rank":        0,
+	})
+	return r.db.Delete(&domain.TimeTrialEntry{}, id).Error
+}
+
+// 5. Time Trial Heats & Lanes (Manual Dynamic Heat Builder)
+func (r *Repository) FindTimeTrialHeats(sessionID uint, strokeID uint) ([]domain.TimeTrialHeat, error) {
+	var heats []domain.TimeTrialHeat
+	query := r.db.Preload("Stroke").Preload("Lanes", func(db *gorm.DB) *gorm.DB {
+		return db.Preload("Member").Preload("Entry").Order("lane_number ASC")
+	}).Where("session_id = ?", sessionID)
+
+	if strokeID > 0 {
+		query = query.Where("stroke_id = ?", strokeID)
+	}
+
+	err := query.Order("stroke_id ASC, heat_number ASC").Find(&heats).Error
+	return heats, err
+}
+
+func (r *Repository) CreateTimeTrialHeat(heat *domain.TimeTrialHeat, maxLanes int) error {
+	if maxLanes <= 0 {
+		maxLanes = 6
+	}
+	if heat.HeatNumber <= 0 {
+		var maxHeat int
+		r.db.Model(&domain.TimeTrialHeat{}).
+			Where("session_id = ? AND stroke_id = ?", heat.SessionID, heat.StrokeID).
+			Select("COALESCE(MAX(heat_number), 0)").Scan(&maxHeat)
+		heat.HeatNumber = maxHeat + 1
+	}
+
+	if err := r.db.Create(heat).Error; err != nil {
+		return err
+	}
+
+	for l := 1; l <= maxLanes; l++ {
+		lane := domain.TimeTrialLane{
+			HeatID:     heat.ID,
+			LaneNumber: l,
+			Status:     "OK",
+			Rank:       0,
+		}
+		_ = r.db.Create(&lane)
+	}
+	return nil
+}
+
+func (r *Repository) DeleteTimeTrialHeat(heatID uint) error {
+	_ = r.db.Where("heat_id = ?", heatID).Delete(&domain.TimeTrialLane{})
+	return r.db.Delete(&domain.TimeTrialHeat{}, heatID).Error
+}
+
+func (r *Repository) UpdateTimeTrialLane(laneID uint, memberID *uint, entryID *uint, resultTime string, status string, coachNotes string) error {
+	updates := map[string]interface{}{}
+	if memberID != nil {
+		if *memberID > 0 {
+			updates["member_id"] = *memberID
+		} else {
+			updates["member_id"] = nil
+		}
+	}
+
+	if entryID != nil {
+		if *entryID > 0 {
+			updates["entry_id"] = *entryID
+		} else {
+			updates["entry_id"] = nil
+		}
+	}
+
+	if resultTime != "" {
+		updates["result_time"] = resultTime
+	}
+	if status != "" {
+		updates["status"] = status
+	}
+	if coachNotes != "" {
+		updates["coach_notes"] = coachNotes
+	}
+
+	return r.db.Model(&domain.TimeTrialLane{}).Where("id = ?", laneID).Updates(updates).Error
+}
+
+// Helper to convert mm.ss.ms to milliseconds for accurate speed ranking
+func parseSpeedToMs(t string) int {
+	clean := strings.TrimSpace(t)
+	if clean == "" || clean == "-" || strings.ToUpper(clean) == "NT" {
+		return 999999999
+	}
+	clean = strings.ReplaceAll(clean, ":", ".")
+	parts := strings.Split(clean, ".")
+	if len(parts) >= 3 {
+		m, _ := strconv.Atoi(parts[0])
+		s, _ := strconv.Atoi(parts[1])
+		msStr := parts[2]
+		if len(msStr) == 2 {
+			msStr += "0"
+		}
+		ms, _ := strconv.Atoi(msStr)
+		return (m * 60000) + (s * 1000) + ms
+	} else if len(parts) == 2 {
+		s, _ := strconv.Atoi(parts[0])
+		msStr := parts[1]
+		if len(msStr) == 2 {
+			msStr += "0"
+		}
+		ms, _ := strconv.Atoi(msStr)
+		return (s * 1000) + ms
+	}
+	return 999999999
+}
+
+func (r *Repository) CalculateTimeTrialRanks(sessionID uint, strokeID uint) error {
+	// Find all heats for this session and stroke
+	var heats []domain.TimeTrialHeat
+	if err := r.db.Where("session_id = ? AND stroke_id = ?", sessionID, strokeID).Find(&heats).Error; err != nil {
+		return err
+	}
+	if len(heats) == 0 {
+		return nil
+	}
+
+	var heatIDs []uint
+	for _, h := range heats {
+		heatIDs = append(heatIDs, h.ID)
+	}
+
+	var lanes []domain.TimeTrialLane
+	if err := r.db.Where("heat_id IN (?) AND member_id IS NOT NULL AND member_id > 0", heatIDs).Find(&lanes).Error; err != nil {
+		return err
+	}
+
+	type laneScore struct {
+		id     uint
+		status string
+		ms     int
+	}
+
+	var scores []laneScore
+	for _, l := range lanes {
+		ms := parseSpeedToMs(l.ResultTime)
+		scores = append(scores, laneScore{
+			id:     l.ID,
+			status: strings.ToUpper(strings.TrimSpace(l.Status)),
+			ms:     ms,
+		})
+	}
+
+	// Sort valid lanes (status == OK and ms < 999999999) by ms ascending
+	validScores := []laneScore{}
+	invalidScores := []laneScore{}
+	for _, s := range scores {
+		if s.status == "OK" && s.ms < 999999999 {
+			validScores = append(validScores, s)
+		} else {
+			invalidScores = append(invalidScores, s)
+		}
+	}
+
+	// Sort valid by time ascending
+	for i := 0; i < len(validScores)-1; i++ {
+		for j := i + 1; j < len(validScores); j++ {
+			if validScores[j].ms < validScores[i].ms {
+				validScores[i], validScores[j] = validScores[j], validScores[i]
+			}
+		}
+	}
+
+	// Assign rank 1, 2, 3...
+	currentRank := 1
+	for _, vs := range validScores {
+		_ = r.db.Model(&domain.TimeTrialLane{}).Where("id = ?", vs.id).Update("rank", currentRank)
+		currentRank++
+	}
+
+	for _, inv := range invalidScores {
+		_ = r.db.Model(&domain.TimeTrialLane{}).Where("id = ?", inv.id).Update("rank", 0)
+	}
+
+	return nil
+}
+
 
 
 

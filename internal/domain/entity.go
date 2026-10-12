@@ -354,6 +354,104 @@ type TestimonialSectionConfig struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// ClubMember represents an official registered member/swimmer of MASC Swim Club
+type ClubMember struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	MemberNumber string    `gorm:"size:100;uniqueIndex;not null" json:"member_number"` // Manual input by admin, e.g. MASC-001
+	FullName     string    `gorm:"size:255;not null" json:"full_name"`
+	Nickname     string    `gorm:"size:100" json:"nickname"`
+	Gender       string    `gorm:"size:20;not null" json:"gender"` // PUTRA / PUTRI
+	BirthPlace   string    `gorm:"size:150" json:"birth_place"`
+	BirthDate    string    `gorm:"size:50" json:"birth_date"`      // YYYY-MM-DD
+	Phone        string    `gorm:"size:50" json:"phone"`
+	ParentName   string    `gorm:"size:150" json:"parent_name"`
+	ParentPhone  string    `gorm:"size:50" json:"parent_phone"`
+	Email        string    `gorm:"size:150" json:"email"`
+	Address      string    `gorm:"type:text" json:"address"`
+	School       string    `gorm:"size:200" json:"school"`
+	JoinDate     string    `gorm:"size:50" json:"join_date"`       // YYYY-MM-DD
+	Status       string    `gorm:"size:50;default:'active'" json:"status"` // active, inactive, leave, alumni
+	PhotoURL     string    `gorm:"type:text" json:"photo_url"`
+	DocumentURL  string    `gorm:"type:text" json:"document_url"`
+	Notes        string    `gorm:"type:text" json:"notes"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// TimeTrialStroke represents stroke/event master specifically for Time Trials
+type TimeTrialStroke struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	EventCode string    `gorm:"size:50;not null" json:"event_code"` // e.g. TT-01, TT-02
+	Name      string    `gorm:"size:255;not null" json:"name"`       // e.g. 50 METER GAYA BEBAS
+	Distance  string    `gorm:"size:50;not null" json:"distance"`   // 25 METER, 50 METER, 100 METER
+	Stroke    string    `gorm:"size:50;not null" json:"stroke"`     // FREESTYLE, BREASTSTROKE, BACKSTROKE, BUTTERFLY, INDIVIDUAL_MEDLEY, KICKING_BOARD, FIN
+	SortOrder int       `gorm:"default:0" json:"sort_order"`
+	IsActive  bool      `gorm:"default:true" json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TimeTrialSession represents a time trial event/testing session
+type TimeTrialSession struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	Title       string    `gorm:"size:255;not null" json:"title"`       // e.g. Time Trial Internal Maret 2026
+	Date        string    `gorm:"size:50;not null" json:"date"`         // YYYY-MM-DD
+	Location    string    `gorm:"size:255;default:'Kolam Renang MASC'" json:"location"`
+	PoolLength  string    `gorm:"size:50;default:'25M'" json:"pool_length"` // 25M or 50M
+	MaxLanes    int       `gorm:"default:6" json:"max_lanes"`           // Number of pool lanes (e.g. 3, 6, 8)
+	Status      string    `gorm:"size:50;default:'draft'" json:"status"` // draft, in_progress, completed
+	Notes       string    `gorm:"type:text" json:"notes"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// TimeTrialEntry represents assigning a club member to a stroke in a specific session
+type TimeTrialEntry struct {
+	ID        uint              `gorm:"primaryKey" json:"id"`
+	SessionID uint              `gorm:"index;not null" json:"session_id"`
+	Session   *TimeTrialSession `gorm:"foreignKey:SessionID" json:"session,omitempty"`
+	MemberID  uint              `gorm:"index;not null" json:"member_id"`
+	Member    *ClubMember       `gorm:"foreignKey:MemberID" json:"member,omitempty"`
+	StrokeID  uint              `gorm:"index;not null" json:"stroke_id"`
+	Stroke    *TimeTrialStroke  `gorm:"foreignKey:StrokeID" json:"stroke,omitempty"`
+	SeedTime  string            `gorm:"size:50;default:'99.99.99'" json:"seed_time"` // mm.ss.ms or NT
+	Status    string            `gorm:"size:50;default:'registered'" json:"status"` // registered, assigned_to_heat, scratched
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+// TimeTrialHeat represents a manual heat created by admin for a stroke in a session
+type TimeTrialHeat struct {
+	ID         uint              `gorm:"primaryKey" json:"id"`
+	SessionID  uint              `gorm:"index;not null" json:"session_id"`
+	Session    *TimeTrialSession `gorm:"foreignKey:SessionID" json:"session,omitempty"`
+	StrokeID   uint              `gorm:"index;not null" json:"stroke_id"`
+	Stroke     *TimeTrialStroke  `gorm:"foreignKey:StrokeID" json:"stroke,omitempty"`
+	HeatNumber int               `gorm:"not null" json:"heat_number"` // 1, 2, 3...
+	Notes      string            `gorm:"size:255" json:"notes"`
+	Lanes      []TimeTrialLane   `gorm:"foreignKey:HeatID;constraint:OnDelete:CASCADE" json:"lanes,omitempty"`
+	CreatedAt  time.Time         `json:"created_at"`
+	UpdatedAt  time.Time         `json:"updated_at"`
+}
+
+// TimeTrialLane represents a lane inside a manual heat with participant and speed results
+type TimeTrialLane struct {
+	ID         uint             `gorm:"primaryKey" json:"id"`
+	HeatID     uint             `gorm:"index;not null" json:"heat_id"`
+	LaneNumber int              `gorm:"not null" json:"lane_number"` // 1, 2, 3... up to MaxLanes
+	EntryID    *uint            `gorm:"index" json:"entry_id,omitempty"`
+	Entry      *TimeTrialEntry  `gorm:"foreignKey:EntryID" json:"entry,omitempty"`
+	MemberID   *uint            `gorm:"index" json:"member_id,omitempty"`
+	Member     *ClubMember      `gorm:"foreignKey:MemberID" json:"member,omitempty"`
+	ResultTime string           `gorm:"size:50" json:"result_time"` // mm.ss.ms or NT
+	Status     string           `gorm:"size:50;default:'OK'" json:"status"` // OK, DNS, DNF, DQ
+	Rank       int              `gorm:"default:0" json:"rank"`
+	CoachNotes string           `gorm:"type:text" json:"coach_notes"`
+	CreatedAt  time.Time        `json:"created_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
+}
+
+
 
 
 

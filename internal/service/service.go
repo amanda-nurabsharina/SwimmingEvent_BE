@@ -1687,6 +1687,161 @@ func (s *Service) DeleteUser(id uint, currentUserID uint) error {
 	return s.repo.DeleteUser(id)
 }
 
+// ----------------------------------------------------------------------
+// MASC CLUB MEMBER & TIME TRIAL SERVICES
+// ----------------------------------------------------------------------
+
+// 1. Club Member
+func (s *Service) GetClubMembers(search, status, gender string) ([]domain.ClubMember, error) {
+	return s.repo.FindClubMembers(search, status, gender)
+}
+
+func (s *Service) GetClubMemberByID(id uint) (*domain.ClubMember, error) {
+	return s.repo.FindClubMemberByID(id)
+}
+
+func (s *Service) CreateClubMember(m *domain.ClubMember) error {
+	if strings.TrimSpace(m.MemberNumber) == "" {
+		return fmt.Errorf("Nomor anggota wajib diisi manual oleh admin")
+	}
+	if strings.TrimSpace(m.FullName) == "" {
+		return fmt.Errorf("Nama lengkap anggota wajib diisi")
+	}
+	return s.repo.CreateClubMember(m)
+}
+
+func (s *Service) UpdateClubMember(m *domain.ClubMember) error {
+	if strings.TrimSpace(m.MemberNumber) == "" {
+		return fmt.Errorf("Nomor anggota tidak boleh kosong")
+	}
+	if strings.TrimSpace(m.FullName) == "" {
+		return fmt.Errorf("Nama lengkap tidak boleh kosong")
+	}
+	return s.repo.UpdateClubMember(m)
+}
+
+func (s *Service) DeleteClubMember(id uint) error {
+	return s.repo.DeleteClubMember(id)
+}
+
+func (s *Service) GetClubMemberSpeedHistory(memberID uint) ([]domain.TimeTrialLane, error) {
+	return s.repo.GetClubMemberSpeedHistory(memberID)
+}
+
+// 2. Time Trial Stroke
+func (s *Service) GetTimeTrialStrokes() ([]domain.TimeTrialStroke, error) {
+	return s.repo.FindTimeTrialStrokes()
+}
+
+func (s *Service) CreateTimeTrialStroke(stroke *domain.TimeTrialStroke) error {
+	if strings.TrimSpace(stroke.Name) == "" {
+		return fmt.Errorf("Nama nomor gaya wajib diisi")
+	}
+	return s.repo.CreateTimeTrialStroke(stroke)
+}
+
+func (s *Service) UpdateTimeTrialStroke(stroke *domain.TimeTrialStroke) error {
+	if strings.TrimSpace(stroke.Name) == "" {
+		return fmt.Errorf("Nama nomor gaya tidak boleh kosong")
+	}
+	return s.repo.UpdateTimeTrialStroke(stroke)
+}
+
+func (s *Service) DeleteTimeTrialStroke(id uint) error {
+	return s.repo.DeleteTimeTrialStroke(id)
+}
+
+// 3. Time Trial Session
+func (s *Service) GetTimeTrialSessions() ([]domain.TimeTrialSession, error) {
+	return s.repo.FindTimeTrialSessions()
+}
+
+func (s *Service) GetTimeTrialSessionByID(id uint) (*domain.TimeTrialSession, error) {
+	return s.repo.FindTimeTrialSessionByID(id)
+}
+
+func (s *Service) CreateTimeTrialSession(session *domain.TimeTrialSession) error {
+	if strings.TrimSpace(session.Title) == "" {
+		return fmt.Errorf("Judul sesi time trial wajib diisi")
+	}
+	if strings.TrimSpace(session.Date) == "" {
+		return fmt.Errorf("Tanggal sesi time trial wajib diisi")
+	}
+	if session.MaxLanes <= 0 {
+		session.MaxLanes = 6
+	}
+	return s.repo.CreateTimeTrialSession(session)
+}
+
+func (s *Service) UpdateTimeTrialSession(session *domain.TimeTrialSession) error {
+	if strings.TrimSpace(session.Title) == "" {
+		return fmt.Errorf("Judul sesi tidak boleh kosong")
+	}
+	return s.repo.UpdateTimeTrialSession(session)
+}
+
+func (s *Service) DeleteTimeTrialSession(id uint) error {
+	return s.repo.DeleteTimeTrialSession(id)
+}
+
+// 4. Time Trial Entry
+func (s *Service) GetTimeTrialEntries(sessionID uint, strokeID uint) ([]domain.TimeTrialEntry, error) {
+	return s.repo.FindTimeTrialEntries(sessionID, strokeID)
+}
+
+func (s *Service) CreateTimeTrialEntry(entry *domain.TimeTrialEntry) error {
+	if entry.SessionID == 0 || entry.MemberID == 0 || entry.StrokeID == 0 {
+		return fmt.Errorf("Parameter sesi, anggota, dan nomor gaya wajib valid")
+	}
+	if strings.TrimSpace(entry.SeedTime) == "" {
+		entry.SeedTime = "99.99.99"
+	}
+	return s.repo.CreateTimeTrialEntry(entry)
+}
+
+func (s *Service) DeleteTimeTrialEntry(id uint) error {
+	return s.repo.DeleteTimeTrialEntry(id)
+}
+
+// 5. Time Trial Heats & Lanes
+func (s *Service) GetTimeTrialHeats(sessionID uint, strokeID uint) ([]domain.TimeTrialHeat, error) {
+	return s.repo.FindTimeTrialHeats(sessionID, strokeID)
+}
+
+func (s *Service) CreateTimeTrialHeat(sessionID uint, strokeID uint, heatNumber int, notes string, maxLanes int) error {
+	if sessionID == 0 || strokeID == 0 {
+		return fmt.Errorf("Sesi dan nomor gaya wajib valid")
+	}
+	if maxLanes <= 0 {
+		session, err := s.repo.FindTimeTrialSessionByID(sessionID)
+		if err == nil && session != nil && session.MaxLanes > 0 {
+			maxLanes = session.MaxLanes
+		} else {
+			maxLanes = 6
+		}
+	}
+	heat := &domain.TimeTrialHeat{
+		SessionID:  sessionID,
+		StrokeID:   strokeID,
+		HeatNumber: heatNumber,
+		Notes:      notes,
+	}
+	return s.repo.CreateTimeTrialHeat(heat, maxLanes)
+}
+
+func (s *Service) DeleteTimeTrialHeat(heatID uint) error {
+	return s.repo.DeleteTimeTrialHeat(heatID)
+}
+
+func (s *Service) UpdateTimeTrialLane(laneID uint, memberID *uint, entryID *uint, resultTime string, status string, coachNotes string) error {
+	return s.repo.UpdateTimeTrialLane(laneID, memberID, entryID, resultTime, status, coachNotes)
+}
+
+func (s *Service) CalculateTimeTrialRanks(sessionID uint, strokeID uint) error {
+	return s.repo.CalculateTimeTrialRanks(sessionID, strokeID)
+}
+
+
 
 
 

@@ -178,6 +178,39 @@ func main() {
 	admin.Put("/users/:id", adminHandler.UpdateUser)
 	admin.Delete("/users/:id", adminHandler.DeleteUser)
 
+	// MASC Club Members CMS
+	admin.Get("/club-members", adminHandler.GetClubMembers)
+	admin.Get("/club-members/:id", adminHandler.GetClubMemberByID)
+	admin.Post("/club-members", adminHandler.CreateClubMember)
+	admin.Put("/club-members/:id", adminHandler.UpdateClubMember)
+	admin.Delete("/club-members/:id", adminHandler.DeleteClubMember)
+	admin.Get("/club-members/:id/speed-history", adminHandler.GetClubMemberSpeedHistory)
+
+	// Time Trial Strokes CMS
+	admin.Get("/time-trial/strokes", adminHandler.GetTimeTrialStrokes)
+	admin.Post("/time-trial/strokes", adminHandler.CreateTimeTrialStroke)
+	admin.Put("/time-trial/strokes/:id", adminHandler.UpdateTimeTrialStroke)
+	admin.Delete("/time-trial/strokes/:id", adminHandler.DeleteTimeTrialStroke)
+
+	// Time Trial Sessions CMS
+	admin.Get("/time-trial/sessions", adminHandler.GetTimeTrialSessions)
+	admin.Get("/time-trial/sessions/:id", adminHandler.GetTimeTrialSessionByID)
+	admin.Post("/time-trial/sessions", adminHandler.CreateTimeTrialSession)
+	admin.Put("/time-trial/sessions/:id", adminHandler.UpdateTimeTrialSession)
+	admin.Delete("/time-trial/sessions/:id", adminHandler.DeleteTimeTrialSession)
+
+	// Time Trial Entries (Assign Member)
+	admin.Get("/time-trial/entries", adminHandler.GetTimeTrialEntries)
+	admin.Post("/time-trial/entries", adminHandler.CreateTimeTrialEntry)
+	admin.Delete("/time-trial/entries/:id", adminHandler.DeleteTimeTrialEntry)
+
+	// Time Trial Heats & Lanes (Manual Dynamic Heat Builder & Results)
+	admin.Get("/time-trial/heats", adminHandler.GetTimeTrialHeats)
+	admin.Post("/time-trial/heats", adminHandler.CreateTimeTrialHeat)
+	admin.Delete("/time-trial/heats/:id", adminHandler.DeleteTimeTrialHeat)
+	admin.Put("/time-trial/lanes/:id", adminHandler.UpdateTimeTrialLane)
+	admin.Post("/time-trial/calculate-ranks", adminHandler.CalculateTimeTrialRanks)
+
 	log.Printf("Swimming Event API starting on port :%s in %s mode...", cfg.Port, cfg.AppEnv)
 	if err := app.Listen(":" + cfg.Port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
