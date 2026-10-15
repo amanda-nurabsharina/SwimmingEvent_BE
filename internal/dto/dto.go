@@ -161,6 +161,7 @@ type StartingItemDTO struct {
 
 type BukuAcaraHeatItemDTO struct {
 	RegistrationID    uint   `json:"registration_id,omitempty"`
+	RegistrationCode  string `json:"registration_code,omitempty"`
 	Heat              int    `json:"heat"`
 	HeatLabel         string `json:"heat_label,omitempty"`
 	HeatCategory      string `json:"heat_category,omitempty"`
@@ -168,6 +169,8 @@ type BukuAcaraHeatItemDTO struct {
 	Nama              string `json:"nama"`
 	Gender            string `json:"jenis_kelamin"`
 	Club              string `json:"club"`
+	BirthDate         string `json:"birth_date,omitempty"`
+	AgeGroup          string `json:"age_group,omitempty"`
 	TimeSeed          string `json:"time_seed"`
 	Result            string `json:"result"`
 	Rank              int    `json:"rank,omitempty"`

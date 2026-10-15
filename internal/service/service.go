@@ -731,6 +731,7 @@ func (s *Service) GetBukuAcara(tournamentID uint, round string) ([]dto.BukuAcara
 
 					heatItems = append(heatItems, dto.BukuAcaraHeatItemDTO{
 						RegistrationID:    r.ID,
+						RegistrationCode:  r.RegistrationCode,
 						Heat:              h,
 						HeatLabel:         heatLabel,
 						HeatCategory:      heatCategoryStr,
@@ -738,6 +739,8 @@ func (s *Service) GetBukuAcara(tournamentID uint, round string) ([]dto.BukuAcara
 						Nama:              r.Participant.Name,
 						Gender:            r.Participant.Gender,
 						Club:              r.Participant.Club,
+						BirthDate:         r.Participant.BirthDate,
+						AgeGroup:          r.Participant.AgeGroup,
 						TimeSeed:          timeSeed,
 						Result:            res,
 						Rank:              rnk,
