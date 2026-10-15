@@ -343,6 +343,38 @@ func (h *AdminHandler) SwapRegistrationHeatLine(c *fiber.Ctx) error {
 	})
 }
 
+func (h *AdminHandler) MoveRegistrationEvent(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "ID pendaftaran tidak valid", nil)
+	}
+
+	var req dto.MoveRegistrationEventRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Format payload tidak valid: "+err.Error(), nil)
+	}
+
+	if req.TargetEventID == 0 {
+		return response.Error(c, fiber.StatusBadRequest, "Nomor lomba tujuan (target_event_id) wajib dipilih", nil)
+	}
+
+	operator, _ := c.Locals("username").(string)
+	if operator == "" {
+		operator = "Admin Panitia"
+	}
+	ip := c.IP()
+
+	reg, err := h.svc.MoveRegistrationEvent(uint(id), req.TargetEventID, req.TargetHeat, req.TargetLine, req.Round, operator, ip)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, fmt.Sprintf("Perenang %s berhasil dipindahkan ke nomor lomba #%d %s (Seri %d Line %d)",
+		reg.Participant.Name, reg.SwimmingEvent.EventCode, reg.SwimmingEvent.EventName, reg.HeatNumber, reg.LineNumber), reg)
+}
+
+
 func (h *AdminHandler) GetRaceResultLogs(c *fiber.Ctx) error {
 	tourneyIDStr := c.Query("tournament_id")
 	tourneyID, _ := strconv.ParseUint(tourneyIDStr, 10, 64)

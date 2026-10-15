@@ -906,6 +906,35 @@ func (r *Repository) UpdateRegistrationHeatLine(id uint, heat, line int) error {
 	}).Error
 }
 
+func (r *Repository) MoveRegistrationEvent(id uint, newEventID uint, heat, line int) error {
+	return r.db.Model(&domain.Registration{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"swimming_event_id": newEventID,
+		"heat_number":      heat,
+		"line_number":      line,
+		"race_result_time": "",
+		"rank":             0,
+	}).Error
+}
+
+func (r *Repository) MoveRegistrationFinalEvent(id uint, newEventID uint, heat, line int) error {
+	return r.db.Model(&domain.Registration{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"swimming_event_id": newEventID,
+		"final_heat_number": heat,
+		"final_line_number": line,
+		"final_result_time": "",
+		"final_rank":        0,
+	}).Error
+}
+
+func (r *Repository) FindRegistrationsByEventID(eventID uint) ([]domain.Registration, error) {
+	var regs []domain.Registration
+	err := r.db.Preload("Participant").Preload("SwimmingEvent").
+		Where("swimming_event_id = ? AND is_active = true", eventID).
+		Find(&regs).Error
+	return regs, err
+}
+
+
 func (r *Repository) FindRegistrationByID(id uint) (*domain.Registration, error) {
 	var reg domain.Registration
 	err := r.db.Preload("Participant").Preload("SwimmingEvent").First(&reg, id).Error

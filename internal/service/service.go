@@ -109,9 +109,27 @@ func (s *Service) RegisterParticipant(req dto.RegisterParticipantRequest) (*dto.
 			return nil, fmt.Errorf("tanggal lahir tidak boleh di masa depan")
 		}
 
-		// Perhitungan usia atlet berpatokan pada tahun kejuaraan (2026)
-		champYear := 2026
-		age := champYear - birthTime.Year()
+		// Perhitungan usia atlet berpatokan pada tanggal event kejuaraan atau tanggal hari ini (presisi hari & bulan)
+		refTime := time.Now()
+		if len(req.EventSelections) > 0 {
+			firstEv, _ := s.repo.FindEventByID(req.EventSelections[0].SwimmingEventID)
+			if firstEv != nil && firstEv.TournamentID > 0 {
+				tourney, _ := s.repo.FindTournamentByID(firstEv.TournamentID)
+				if tourney != nil && tourney.EventStartDate != "" {
+					if tTime, err := time.Parse("2006-01-02", tourney.EventStartDate); err == nil {
+						refTime = tTime
+					}
+				}
+			}
+		}
+
+		age := refTime.Year() - birthTime.Year()
+		if refTime.Month() < birthTime.Month() || (refTime.Month() == birthTime.Month() && refTime.Day() < birthTime.Day()) {
+			age--
+		}
+		if age < 0 {
+			age = 0
+		}
 		if age < 4 || age > 85 {
 			return nil, fmt.Errorf("usia atlet (%d tahun) di luar batas kepesertaan yang diperbolehkan (minimal 4 tahun)", age)
 		}
@@ -871,6 +889,16 @@ func (s *Service) UpdateParticipant(participantID uint, req dto.UpdateParticipan
 	if err := s.repo.UpdateParticipant(p); err != nil {
 		return nil, err
 	}
+
+	// Process any event moves requested (e.g. when gender or KU changes)
+	if len(req.EventMoves) > 0 {
+		for _, em := range req.EventMoves {
+			if em.RegistrationID > 0 && em.TargetEventID > 0 {
+				_, _ = s.MoveRegistrationEvent(em.RegistrationID, em.TargetEventID, em.TargetHeat, em.TargetLine, "preliminary", "Admin Panitia", "")
+			}
+		}
+	}
+
 	return p, nil
 }
 
@@ -1172,6 +1200,142 @@ func (s *Service) SwapRegistrationHeatLine(id uint, targetHeat, targetLine int, 
 
 	return regA, swappedB, nil
 }
+
+func (s *Service) MoveRegistrationEvent(id uint, targetEventID uint, targetHeat, targetLine int, round string, operatorName, ipAddress string) (*domain.Registration, error) {
+	if operatorName == "" {
+		operatorName = "Admin Panitia"
+	}
+
+	reg, err := s.repo.FindRegistrationByID(id)
+	if err != nil {
+		return nil, fmt.Errorf("data pendaftaran tidak ditemukan: %w", err)
+	}
+
+	targetEvent, err := s.repo.FindEventByID(targetEventID)
+	if err != nil {
+		return nil, fmt.Errorf("nomor lomba tujuan tidak ditemukan: %w", err)
+	}
+
+	oldEvent := reg.SwimmingEvent
+	isFinal := strings.ToLower(strings.TrimSpace(round)) == "final"
+	roundLabel := "Putaran Awal"
+	oldHeat := reg.HeatNumber
+	oldLine := reg.LineNumber
+	if isFinal {
+		roundLabel = "Babak Final"
+		oldHeat = reg.FinalHeatNumber
+		oldLine = reg.FinalLineNumber
+	}
+
+	// If targetHeat or targetLine <= 0, automatically find the first available slot in targetEvent
+	if targetHeat <= 0 || targetLine <= 0 {
+		poolCfg, _ := s.repo.FindPoolConfig()
+		maxLanes := 3
+		if poolCfg != nil && poolCfg.MaxLanes > 0 {
+			maxLanes = poolCfg.MaxLanes
+		}
+
+		targetRegs, _ := s.repo.FindRegistrationsByEventID(targetEventID)
+		occupiedMap := make(map[string]bool)
+		maxHeatFound := 1
+
+		for _, tr := range targetRegs {
+			if tr.ID == reg.ID {
+				continue
+			}
+			h := tr.HeatNumber
+			l := tr.LineNumber
+			if isFinal {
+				h = tr.FinalHeatNumber
+				l = tr.FinalLineNumber
+			}
+			if h > 0 && l > 0 {
+				occupiedMap[fmt.Sprintf("%d_%d", h, l)] = true
+				if h > maxHeatFound {
+					maxHeatFound = h
+				}
+			}
+		}
+
+		found := false
+		for h := 1; h <= maxHeatFound; h++ {
+			for l := 1; l <= maxLanes; l++ {
+				if !occupiedMap[fmt.Sprintf("%d_%d", h, l)] {
+					targetHeat = h
+					targetLine = l
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+
+		if !found {
+			// All existing heats are full, place in new heat
+			targetHeat = maxHeatFound + 1
+			targetLine = 1
+		}
+	} else {
+		// Target Heat & Line specified manually, verify not occupied in target event
+		var occReg *domain.Registration
+		var occErr error
+		if isFinal {
+			occReg, occErr = s.repo.FindOccupiedFinalRegistration(targetEventID, targetHeat, targetLine, reg.ID)
+		} else {
+			occReg, occErr = s.repo.FindOccupiedRegistration(targetEventID, targetHeat, targetLine, reg.ID)
+		}
+		if occErr == nil && occReg != nil && occReg.ID > 0 {
+			return nil, fmt.Errorf("lintasan %d pada Seri %d di nomor lomba tujuan (#%d - %s) sudah ditempati oleh %s (%s)",
+				targetLine, targetHeat, targetEvent.EventCode, targetEvent.EventName, occReg.Participant.Name, occReg.Participant.Club)
+		}
+	}
+
+	// Perform the move in DB
+	if isFinal {
+		if err := s.repo.MoveRegistrationFinalEvent(reg.ID, targetEventID, targetHeat, targetLine); err != nil {
+			return nil, fmt.Errorf("gagal memindahkan nomor lomba final: %w", err)
+		}
+		reg.FinalHeatNumber = targetHeat
+		reg.FinalLineNumber = targetLine
+		reg.FinalResultTime = ""
+		reg.FinalRank = 0
+	} else {
+		if err := s.repo.MoveRegistrationEvent(reg.ID, targetEventID, targetHeat, targetLine); err != nil {
+			return nil, fmt.Errorf("gagal memindahkan nomor lomba: %w", err)
+		}
+		reg.HeatNumber = targetHeat
+		reg.LineNumber = targetLine
+		reg.RaceResultTime = ""
+		reg.Rank = 0
+	}
+	reg.SwimmingEventID = targetEventID
+	reg.SwimmingEvent = *targetEvent
+
+	// Log audit trail
+	_ = s.repo.CreateRaceResultLog(&domain.RaceResultLog{
+		TournamentID:   targetEvent.TournamentID,
+		RegistrationID: reg.ID,
+		SwimmerName:    reg.Participant.Name,
+		ClubName:       reg.Participant.Club,
+		EventCode:      targetEvent.EventCode,
+		EventName:      targetEvent.EventName,
+		Round:          roundLabel,
+		HeatNumber:     targetHeat,
+		LineNumber:     targetLine,
+		Action:         "MOVE_EVENT",
+		OldValue:       fmt.Sprintf("#%d %s (Seri %d, Line %d)", oldEvent.EventCode, oldEvent.EventName, oldHeat, oldLine),
+		NewValue:       fmt.Sprintf("#%d %s (Seri %d, Line %d)", targetEvent.EventCode, targetEvent.EventName, targetHeat, targetLine),
+		OperatorName:   operatorName,
+		Notes:          fmt.Sprintf("Pindah nomor lomba perenang %s dari #%d %s (Seri %d Line %d) ke #%d %s (Seri %d Line %d)", reg.Participant.Name, oldEvent.EventCode, oldEvent.EventName, oldHeat, oldLine, targetEvent.EventCode, targetEvent.EventName, targetHeat, targetLine),
+		IPAddress:      ipAddress,
+		CreatedAt:      time.Now(),
+	})
+
+	return reg, nil
+}
+
 
 // GenerateFinalRound calculates finalists from preliminary heat winners + next fastest times
 func (s *Service) GenerateFinalRound(tournamentID uint, maxLanes int, qualifyMode string, operatorName, ipAddress string) error {

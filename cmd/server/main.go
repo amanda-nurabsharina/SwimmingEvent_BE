@@ -111,6 +111,7 @@ func main() {
 	admin.Get("/buku-acara", publicHandler.GetBukuAcara)
 	admin.Put("/registrations/:id/result", adminHandler.RecordRaceResult)
 	admin.Put("/registrations/:id/heat-line", adminHandler.SwapRegistrationHeatLine)
+	admin.Put("/registrations/:id/move-event", adminHandler.MoveRegistrationEvent)
 	admin.Get("/race-results/logs", adminHandler.GetRaceResultLogs)
 	admin.Get("/race-results/logs/stats", adminHandler.GetRaceResultLogStats)
 

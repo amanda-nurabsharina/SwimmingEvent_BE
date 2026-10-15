@@ -98,16 +98,33 @@ type VerificationRequest struct {
 	PaymentStatus string `json:"payment_status"` // verified / rejected
 }
 
-type UpdateParticipantRequest struct {
-	Name      string `json:"name"`
-	Gender    string `json:"gender"`
-	Club      string `json:"club"`
-	PIC       string `json:"pic"`
-	Contact   string `json:"contact"`
-	Email     string `json:"email"`
-	BirthDate string `json:"birth_date"`
-	AgeGroup  string `json:"age_group"`
+type EventMoveItem struct {
+	RegistrationID uint `json:"registration_id"`
+	TargetEventID  uint `json:"target_event_id"`
+	TargetHeat     int  `json:"target_heat"`
+	TargetLine     int  `json:"target_line"`
 }
+
+type UpdateParticipantRequest struct {
+	Name       string          `json:"name"`
+	Gender     string          `json:"gender"`
+	Club       string          `json:"club"`
+	PIC        string          `json:"pic"`
+	Contact    string          `json:"contact"`
+	Email      string          `json:"email"`
+	BirthDate  string          `json:"birth_date"`
+	AgeGroup   string          `json:"age_group"`
+	EventMoves []EventMoveItem `json:"event_moves,omitempty"`
+}
+
+type MoveRegistrationEventRequest struct {
+	TargetEventID uint   `json:"target_event_id"`
+	TargetHeat    int    `json:"target_heat"`
+	TargetLine    int    `json:"target_line"`
+	Round         string `json:"round"`
+	Notes         string `json:"notes"`
+}
+
 
 type GenerateBukuAcaraRequest struct {
 	MaxLanes     int  `json:"max_lanes"` // 3, 6, 8, 10 lines
