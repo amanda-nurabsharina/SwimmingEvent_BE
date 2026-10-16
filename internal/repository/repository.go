@@ -74,6 +74,18 @@ func (r *Repository) AutoMigrate() error {
 		_ = r.db.Model(&domain.Registration{}).Where("1 = 1").Update("is_active", true).Error
 	}
 
+	// Clean up any zero/placeholder times in registrations so they are not treated as finished
+	_ = r.db.Exec(`
+		UPDATE registrations 
+		SET race_result_time = '', rank = 0 
+		WHERE race_result_time IN ('00.00.00', '00:00.00', '00.00', '00', '0', '-')
+	`).Error
+	_ = r.db.Exec(`
+		UPDATE registrations 
+		SET final_result_time = '', final_rank = 0 
+		WHERE final_result_time IN ('00.00.00', '00:00.00', '00.00', '00', '0', '-')
+	`).Error
+
 	return nil
 }
 

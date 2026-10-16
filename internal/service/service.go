@@ -375,6 +375,10 @@ func (s *Service) GetStartingList(tournamentID uint) ([]dto.StartingItemDTO, err
 		if tournamentID > 0 && r.SwimmingEvent.TournamentID != tournamentID {
 			continue
 		}
+		res := r.RaceResultTime
+		if IsZeroOrEmptyTime(res) {
+			res = "-"
+		}
 		items = append(items, dto.StartingItemDTO{
 			No:             counter,
 			Nama:           r.Participant.Name,
@@ -384,7 +388,7 @@ func (s *Service) GetStartingList(tournamentID uint) ([]dto.StartingItemDTO, err
 			Club:           r.Participant.Club,
 			PIC:            r.Participant.PIC,
 			Kontak:         r.Participant.Contact,
-			Result:         r.RaceResultTime,
+			Result:         res,
 			Rank:           r.Rank,
 			TournamentID:   r.SwimmingEvent.TournamentID,
 			TournamentName: r.SwimmingEvent.Tournament.Name,
@@ -428,10 +432,23 @@ func getSpearheadLanes(maxLanes int) []int {
 	}
 }
 
+// IsZeroOrEmptyTime checks if a time string represents empty, unset, or placeholder zero time (e.g. "00", "00.00.00", "00:00.00", "-", "")
+func IsZeroOrEmptyTime(t string) bool {
+	t = strings.TrimSpace(t)
+	if t == "" || t == "-" || strings.ToUpper(t) == "NT" {
+		return true
+	}
+	upper := strings.ToUpper(t)
+	if strings.Contains(upper, "DQ") || strings.Contains(upper, "DNF") || strings.Contains(upper, "DNS") {
+		return false
+	}
+	return !strings.ContainsAny(t, "123456789")
+}
+
 // parseTimeSeedToSeconds converts seed time (e.g. 02.31.37 or 99.99.99) into seconds for precise sorting
 func parseTimeSeedToSeconds(t string) float64 {
 	t = strings.TrimSpace(t)
-	if t == "" || t == "NT" || strings.HasPrefix(t, "99") {
+	if t == "" || t == "-" || t == "NT" || IsZeroOrEmptyTime(t) || strings.HasPrefix(t, "99") {
 		return 999999.0
 	}
 	t = strings.ReplaceAll(t, ":", ".")
@@ -740,7 +757,10 @@ func (s *Service) GetBukuAcara(tournamentID uint, round string) ([]dto.BukuAcara
 						rnk = r.FinalRank
 					}
 
-					if res == "" && rnk > 0 {
+					if IsZeroOrEmptyTime(res) {
+						res = "-"
+						rnk = 0
+					} else if res == "" && rnk > 0 {
 						res = fmt.Sprintf("Rank %d", rnk)
 					}
 					if res == "" {
@@ -949,7 +969,13 @@ func (s *Service) RecordRaceResult(id uint, timeStr string, rank int, round stri
 		roundLabel = "Babak Final"
 	}
 
-	// Determine Action: CREATE, UPDATE, DELETE
+	// Normalize zero/empty time (e.g. "00", "00.00.00", "00:00.00", "-", "")
+	if IsZeroOrEmptyTime(timeStr) {
+		timeStr = ""
+		rank = 0
+	}
+
+	// Determine Action: CREATE, UPDATE, DELETE, RESET
 	action := "UPDATE"
 	actionDesc := "Memperbarui"
 	if strings.TrimSpace(oldTime) == "" && strings.TrimSpace(timeStr) != "" {
@@ -957,7 +983,10 @@ func (s *Service) RecordRaceResult(id uint, timeStr string, rank int, round stri
 		actionDesc = "Mencatat baru"
 	} else if strings.TrimSpace(oldTime) != "" && strings.TrimSpace(timeStr) == "" {
 		action = "DELETE"
-		actionDesc = "Menghapus"
+		actionDesc = "Menghapus/Reset"
+	} else if strings.TrimSpace(timeStr) == "" {
+		action = "RESET"
+		actionDesc = "Reset/Kosongkan"
 	}
 
 	// Execute update
@@ -1387,7 +1416,7 @@ func (s *Service) GenerateFinalRound(tournamentID uint, maxLanes int, qualifyMod
 		var withResults []domain.Registration
 		for _, r := range eRegs {
 			res := strings.TrimSpace(r.RaceResultTime)
-			if res != "" && res != "-" {
+			if res != "" && res != "-" && !IsZeroOrEmptyTime(res) {
 				withResults = append(withResults, r)
 			}
 		}
