@@ -147,6 +147,7 @@ func main() {
 	admin.Get("/coaches", adminHandler.GetCoaches)
 	admin.Post("/coaches", adminHandler.SaveCoach)
 	admin.Delete("/coaches/:id", adminHandler.DeleteCoach)
+	admin.Post("/coaches/:id/user", adminHandler.CreateOrUpdateCoachUser)
 
 	// Facilities CMS
 	admin.Get("/facilities/section-config", adminHandler.GetFacilitySectionConfig)
@@ -199,6 +200,7 @@ func main() {
 	admin.Put("/club-members/:id", adminHandler.UpdateClubMember)
 	admin.Delete("/club-members/:id", adminHandler.DeleteClubMember)
 	admin.Get("/club-members/:id/speed-history", adminHandler.GetClubMemberSpeedHistory)
+	admin.Post("/club-members/:id/user", adminHandler.CreateOrUpdateMemberUser)
 
 	// Time Trial Strokes CMS
 	admin.Get("/time-trial/strokes", adminHandler.GetTimeTrialStrokes)
@@ -224,6 +226,21 @@ func main() {
 	admin.Delete("/time-trial/heats/:id", adminHandler.DeleteTimeTrialHeat)
 	admin.Put("/time-trial/lanes/:id", adminHandler.UpdateTimeTrialLane)
 	admin.Post("/time-trial/calculate-ranks", adminHandler.CalculateTimeTrialRanks)
+
+	// Coach Schedule & Payroll CMS (Modul 1: FR-ADM-01, FR-ADM-02, FR-ADM-03)
+	admin.Put("/coaches/:id/schedule", adminHandler.UpdateCoachSchedule)
+	admin.Get("/coach-payrolls", adminHandler.GetCoachPayrolls)
+	admin.Get("/coach-payrolls/:id", adminHandler.GetCoachPayrollByID)
+	admin.Post("/coach-payrolls", adminHandler.CreateCoachPayroll)
+	admin.Post("/coach-payrolls/:id/pay", adminHandler.PayCoachPayroll)
+	admin.Delete("/coach-payrolls/:id", adminHandler.DeleteCoachPayroll)
+
+	// Club Finance CMS (Modul 2: FR-ADM-04, FR-ADM-05)
+	admin.Get("/finance/summary", adminHandler.GetFinanceSummary)
+	admin.Get("/finance/transactions", adminHandler.GetFinanceTransactions)
+	admin.Post("/finance/transactions", adminHandler.CreateFinanceTransaction)
+	admin.Put("/finance/transactions/:id", adminHandler.UpdateFinanceTransaction)
+	admin.Delete("/finance/transactions/:id", adminHandler.DeleteFinanceTransaction)
 
 	log.Printf("Swimming Event API starting on port :%s in %s mode...", cfg.Port, cfg.AppEnv)
 	if err := app.Listen(":" + cfg.Port); err != nil {

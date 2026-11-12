@@ -22,6 +22,8 @@ type User struct {
 	RoleID       *uint     `gorm:"index" json:"role_id,omitempty"`
 	RoleRel      *Role     `gorm:"foreignKey:RoleID" json:"role_rel,omitempty"`
 	Role         string    `gorm:"size:50;default:'Super Admin'" json:"role"`
+	CoachID      *uint     `gorm:"index" json:"coach_id,omitempty"`
+	ClubMemberID *uint     `gorm:"index" json:"club_member_id,omitempty"`
 	Status       string    `gorm:"size:20;default:'active'" json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -272,14 +274,20 @@ type ProgramSectionConfig struct {
 
 type Coach struct {
 	ID               uint      `gorm:"primaryKey" json:"id"`
+	UserID           *uint     `gorm:"index" json:"user_id,omitempty"`
+	User             *User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	Name             string    `gorm:"size:255;not null" json:"name"`
+	Email            string    `gorm:"size:150" json:"email"`
+	Phone            string    `gorm:"size:50" json:"phone"`
 	RoleTitle        string    `gorm:"size:255;not null" json:"role_title"`
 	LicenseBadge     string    `gorm:"size:255" json:"license_badge"`
 	Experience       string    `gorm:"size:255" json:"experience"`
 	Description      string    `gorm:"type:text" json:"description"`
 	VerificationText string    `gorm:"size:255;default:'Verified Coach PB PRSI'" json:"verification_text"`
-	PhotoURL         string    `gorm:"type:text" json:"photo_url"`
-	SortOrder        int       `gorm:"default:0" json:"sort_order"`
+	PhotoURL             string    `gorm:"type:text" json:"photo_url"`
+	HourlyRate           float64   `gorm:"default:100000" json:"hourly_rate"`
+	AvailabilitySchedule string    `gorm:"type:text" json:"availability_schedule"`
+	SortOrder            int       `gorm:"default:0" json:"sort_order"`
 	IsActive         bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
@@ -359,6 +367,8 @@ type TestimonialSectionConfig struct {
 // ClubMember represents an official registered member/swimmer of MASC Swim Club
 type ClubMember struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
+	UserID       *uint     `gorm:"index" json:"user_id,omitempty"`
+	User         *User     `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	MemberNumber string    `gorm:"size:100;uniqueIndex;not null" json:"member_number"` // Manual input by admin, e.g. MASC-001
 	FullName     string    `gorm:"size:255;not null" json:"full_name"`
 	Nickname     string    `gorm:"size:100" json:"nickname"`
@@ -456,6 +466,51 @@ type TimeTrialLane struct {
 	CoachNotes string           `gorm:"type:text" json:"coach_notes"`
 	CreatedAt  time.Time        `json:"created_at"`
 	UpdatedAt  time.Time        `json:"updated_at"`
+}
+
+// ----------------------------------------------------------------------
+// COACH PAYROLL & CLUB FINANCE (MODUL 1 & MODUL 2)
+// ----------------------------------------------------------------------
+
+// CoachPayroll represents a monthly/weekly payroll calculation and slip for a coach
+type CoachPayroll struct {
+	ID            uint       `gorm:"primaryKey" json:"id"`
+	CoachID       uint       `gorm:"index;not null" json:"coach_id"`
+	Coach         *Coach     `gorm:"foreignKey:CoachID" json:"coach,omitempty"`
+	PeriodTitle   string     `gorm:"size:100;not null" json:"period_title"` // e.g. "November 2026"
+	StartDate     string     `gorm:"size:20" json:"start_date"`
+	EndDate       string     `gorm:"size:20" json:"end_date"`
+	TotalHours    float64    `gorm:"default:0" json:"total_hours"`
+	HourlyRate    float64    `gorm:"default:0" json:"hourly_rate"`
+	BaseSalary    float64    `gorm:"default:0" json:"base_salary"`
+	Bonus         float64    `gorm:"default:0" json:"bonus"`
+	Deduction     float64    `gorm:"default:0" json:"deduction"`
+	TotalAmount   float64    `gorm:"not null" json:"total_amount"`
+	Status        string     `gorm:"size:50;default:'DRAFT'" json:"status"` // DRAFT, PAID
+	PaidAt        *time.Time `json:"paid_at,omitempty"`
+	PaymentMethod string     `gorm:"size:50;default:'TRANSFER'" json:"payment_method"` // TRANSFER, CASH
+	Notes         string     `gorm:"type:text" json:"notes"`
+	FinanceTxID   *uint      `gorm:"index" json:"finance_tx_id,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+// FinanceTransaction represents a cash flow record (Kas Masuk / Kas Keluar) for the club
+type FinanceTransaction struct {
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	TransactionType string    `gorm:"size:20;not null" json:"transaction_type"` // IN (Kas Masuk), OUT (Kas Keluar)
+	Category        string    `gorm:"size:100;not null" json:"category"`
+	Amount          float64   `gorm:"not null" json:"amount"`
+	TransactionDate string    `gorm:"size:20;not null" json:"transaction_date"` // YYYY-MM-DD
+	Title           string    `gorm:"size:255;not null" json:"title"`
+	Description     string    `gorm:"type:text" json:"description"`
+	PaymentMethod   string    `gorm:"size:50;default:'TRANSFER'" json:"payment_method"` // TRANSFER, CASH, QRIS
+	ReferenceNumber string    `gorm:"size:100" json:"reference_number"`
+	AttachmentURL   string    `gorm:"type:text" json:"attachment_url"`
+	CoachPayrollID  *uint     `gorm:"index" json:"coach_payroll_id,omitempty"` // If set, LOCKED against deletion
+	RecordedBy      string    `gorm:"size:100" json:"recorded_by"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 

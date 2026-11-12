@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,6 +48,11 @@ func (s *Service) AuthenticateAdmin(req dto.LoginRequest) (*dto.LoginResponse, e
 		roleName = user.RoleRel.Name
 		_ = json.Unmarshal([]byte(user.RoleRel.Permissions), &permissions)
 	} else if user.Role == "Super Admin" || user.Role == "ADMIN" {
+		permissions = []string{"*"}
+	}
+
+	// Open access untuk semua role (Coach, Anggota Club, Super Admin, dll)
+	if roleName == "Coach" || roleName == "Anggota Club" || roleName == "Super Admin" || roleName == "ADMIN" || len(permissions) == 0 {
 		permissions = []string{"*"}
 	}
 
@@ -1577,7 +1583,19 @@ func (s *Service) GetCoaches() ([]domain.Coach, error) {
 }
 
 func (s *Service) SaveCoach(c *domain.Coach) error {
-	return s.repo.SaveCoach(c)
+	isNew := c.ID == 0
+	if err := s.repo.SaveCoach(c); err != nil {
+		return err
+	}
+
+	// Otomatis buat akun user login jika baru atau belum punya user
+	if isNew || c.UserID == nil || *c.UserID == 0 {
+		if u, err := s.CreateOrUpdateCoachUser(c.ID, dto.CreateCoachUserRequest{}); err == nil && u != nil {
+			c.UserID = &u.ID
+			c.User = u
+		}
+	}
+	return nil
 }
 
 func (s *Service) DeleteCoach(id uint) error {
@@ -2046,7 +2064,17 @@ func (s *Service) CreateClubMember(m *domain.ClubMember) error {
 	if strings.TrimSpace(m.FullName) == "" {
 		return fmt.Errorf("Nama lengkap anggota wajib diisi")
 	}
-	return s.repo.CreateClubMember(m)
+	if err := s.repo.CreateClubMember(m); err != nil {
+		return err
+	}
+
+	// Otomatis buat akun user login anggota klub (Role: Anggota Club)
+	if u, err := s.CreateOrUpdateMemberUser(m.ID, dto.CreateMemberUserRequest{}); err == nil && u != nil {
+		m.UserID = &u.ID
+		m.User = u
+	}
+
+	return nil
 }
 
 func (s *Service) UpdateClubMember(m *domain.ClubMember) error {
@@ -2056,7 +2084,16 @@ func (s *Service) UpdateClubMember(m *domain.ClubMember) error {
 	if strings.TrimSpace(m.FullName) == "" {
 		return fmt.Errorf("Nama lengkap tidak boleh kosong")
 	}
-	return s.repo.UpdateClubMember(m)
+	if err := s.repo.UpdateClubMember(m); err != nil {
+		return err
+	}
+
+	// Pastikan akun login anggota klub ada
+	if m.UserID == nil || *m.UserID == 0 {
+		_, _ = s.CreateOrUpdateMemberUser(m.ID, dto.CreateMemberUserRequest{})
+	}
+
+	return nil
 }
 
 func (s *Service) DeleteClubMember(id uint) error {
@@ -2178,6 +2215,454 @@ func (s *Service) UpdateTimeTrialLane(laneID uint, memberID *uint, entryID *uint
 
 func (s *Service) CalculateTimeTrialRanks(sessionID uint, strokeID uint) error {
 	return s.repo.CalculateTimeTrialRanks(sessionID, strokeID)
+}
+
+// ----------------------------------------------------------------------
+// COACH & CLUB MEMBER USER ACCOUNT LINKING
+// ----------------------------------------------------------------------
+
+func (s *Service) CreateOrUpdateCoachUser(coachID uint, req dto.CreateCoachUserRequest) (*domain.User, error) {
+	coach, err := s.repo.FindCoachByID(coachID)
+	if err != nil {
+		return nil, fmt.Errorf("pelatih tidak ditemukan")
+	}
+
+	coachRole, err := s.repo.FindRoleByName("Coach")
+	if err != nil || coachRole == nil {
+		coachRole = &domain.Role{
+			Name:        "Coach",
+			Description: "Role Pelatih Klub MASC (Akses Terbuka)",
+			Permissions: `["*"]`,
+			IsSystem:    false,
+		}
+		if err := s.repo.CreateRole(coachRole); err != nil {
+			return nil, fmt.Errorf("gagal membuat role Coach: %v", err)
+		}
+	}
+
+	username := strings.TrimSpace(req.Username)
+	if username == "" {
+		cleanName := strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9]+`).ReplaceAllString(coach.Name, "_"))
+		cleanName = strings.Trim(cleanName, "_")
+		if cleanName == "" {
+			cleanName = fmt.Sprintf("coach_%d", coach.ID)
+		} else if !strings.HasPrefix(cleanName, "coach_") {
+			cleanName = "coach_" + cleanName
+		}
+		username = cleanName
+	}
+
+	email := strings.TrimSpace(req.Email)
+	if email == "" {
+		if coach.Email != "" {
+			email = coach.Email
+		} else {
+			email = username + "@masc.club"
+		}
+	}
+
+	rawPassword := strings.TrimSpace(req.Password)
+
+	// Jika coach sudah punya user_id
+	if coach.UserID != nil && *coach.UserID > 0 {
+		existingUser, err := s.repo.FindUserByID(*coach.UserID)
+		if err == nil && existingUser != nil && existingUser.ID > 0 {
+			existingUser.Username = username
+			existingUser.Email = email
+			existingUser.RoleID = &coachRole.ID
+			existingUser.Role = coachRole.Name
+			existingUser.CoachID = &coach.ID
+			if rawPassword != "" {
+				hashed, err := security.HashPassword(rawPassword)
+				if err != nil {
+					return nil, fmt.Errorf("gagal mengenkripsi password")
+				}
+				existingUser.PasswordHash = hashed
+			}
+			if err := s.repo.UpdateUser(existingUser); err != nil {
+				return nil, fmt.Errorf("gagal memperbarui akun user: %v", err)
+			}
+			return existingUser, nil
+		}
+	}
+
+	// Cek apakah username / email sudah dipakai oleh user lain
+	existingUser, _ := s.repo.FindUserByUsername(username)
+	if existingUser != nil && existingUser.ID > 0 {
+		existingUser.RoleID = &coachRole.ID
+		existingUser.Role = coachRole.Name
+		existingUser.CoachID = &coach.ID
+		if rawPassword != "" {
+			hashed, _ := security.HashPassword(rawPassword)
+			existingUser.PasswordHash = hashed
+		}
+		_ = s.repo.UpdateUser(existingUser)
+		coach.UserID = &existingUser.ID
+		_ = s.repo.SaveCoach(coach)
+		return existingUser, nil
+	}
+
+	if rawPassword == "" {
+		rawPassword = "password123"
+	}
+
+	hashedPassword, err := security.HashPassword(rawPassword)
+	if err != nil {
+		return nil, fmt.Errorf("gagal memproses password")
+	}
+
+	newUser := domain.User{
+		Username:     username,
+		Email:        email,
+		PasswordHash: hashedPassword,
+		RoleID:       &coachRole.ID,
+		Role:         coachRole.Name,
+		CoachID:      &coach.ID,
+		Status:       "active",
+	}
+
+	if err := s.repo.CreateUser(&newUser); err != nil {
+		return nil, fmt.Errorf("gagal membuat user baru: %v", err)
+	}
+
+	coach.UserID = &newUser.ID
+	if coach.Email == "" && email != "" {
+		coach.Email = email
+	}
+	_ = s.repo.SaveCoach(coach)
+
+	return &newUser, nil
+}
+
+func (s *Service) CreateOrUpdateMemberUser(memberID uint, req dto.CreateMemberUserRequest) (*domain.User, error) {
+	member, err := s.repo.FindClubMemberByID(memberID)
+	if err != nil {
+		return nil, fmt.Errorf("anggota klub tidak ditemukan")
+	}
+
+	memberRole, err := s.repo.FindRoleByName("Anggota Club")
+	if err != nil || memberRole == nil {
+		memberRole = &domain.Role{
+			Name:        "Anggota Club",
+			Description: "Role Anggota / Atlet Klub MASC (Akses Terbuka)",
+			Permissions: `["*"]`,
+			IsSystem:    false,
+		}
+		if err := s.repo.CreateRole(memberRole); err != nil {
+			return nil, fmt.Errorf("gagal membuat role Anggota Club: %v", err)
+		}
+	}
+
+	username := strings.TrimSpace(req.Username)
+	if username == "" {
+		if strings.TrimSpace(member.MemberNumber) != "" {
+			cleanNum := strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9]+`).ReplaceAllString(member.MemberNumber, "_"))
+			username = strings.Trim(cleanNum, "_")
+		} else {
+			cleanName := strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9]+`).ReplaceAllString(member.FullName, "_"))
+			username = "member_" + strings.Trim(cleanName, "_")
+		}
+		if username == "" || username == "member_" {
+			username = fmt.Sprintf("member_%d", member.ID)
+		}
+	}
+
+	email := strings.TrimSpace(req.Email)
+	if email == "" {
+		if member.Email != "" {
+			email = member.Email
+		} else {
+			email = username + "@masc.club"
+		}
+	}
+
+	rawPassword := strings.TrimSpace(req.Password)
+
+	// Jika member sudah punya user_id
+	if member.UserID != nil && *member.UserID > 0 {
+		existingUser, err := s.repo.FindUserByID(*member.UserID)
+		if err == nil && existingUser != nil && existingUser.ID > 0 {
+			log.Printf("[CreateOrUpdateMemberUser] Updating existing user by member.UserID: ID=%d, oldUser=%+v", existingUser.ID, existingUser)
+			existingUser.Username = username
+			existingUser.Email = email
+			existingUser.RoleID = &memberRole.ID
+			existingUser.Role = memberRole.Name
+			existingUser.ClubMemberID = &member.ID
+			if rawPassword != "" {
+				hashed, err := security.HashPassword(rawPassword)
+				if err != nil {
+					return nil, fmt.Errorf("gagal mengenkripsi password")
+				}
+				existingUser.PasswordHash = hashed
+			}
+			if err := s.repo.UpdateUser(existingUser); err != nil {
+				return nil, fmt.Errorf("gagal memperbarui akun user: %v", err)
+			}
+			return existingUser, nil
+		}
+	}
+
+	existingUser, _ := s.repo.FindUserByUsername(username)
+	if existingUser != nil && existingUser.ID > 0 {
+		existingUser.RoleID = &memberRole.ID
+		existingUser.Role = memberRole.Name
+		existingUser.ClubMemberID = &member.ID
+		if rawPassword != "" {
+			hashed, _ := security.HashPassword(rawPassword)
+			existingUser.PasswordHash = hashed
+		}
+		_ = s.repo.UpdateUser(existingUser)
+		member.UserID = &existingUser.ID
+		_ = s.repo.UpdateClubMember(member)
+		return existingUser, nil
+	}
+
+	if rawPassword == "" {
+		rawPassword = "password123"
+	}
+
+	hashedPassword, err := security.HashPassword(rawPassword)
+	if err != nil {
+		return nil, fmt.Errorf("gagal memproses password")
+	}
+
+	newUser := domain.User{
+		Username:     username,
+		Email:        email,
+		PasswordHash: hashedPassword,
+		RoleID:       &memberRole.ID,
+		Role:         memberRole.Name,
+		ClubMemberID: &member.ID,
+		Status:       "active",
+	}
+
+	log.Printf("[CreateOrUpdateMemberUser] Before CreateUser: %+v", newUser)
+	if err := s.repo.CreateUser(&newUser); err != nil {
+		log.Printf("[CreateOrUpdateMemberUser] CreateUser ERROR: %v", err)
+		return nil, fmt.Errorf("gagal membuat user baru: %v", err)
+	}
+	log.Printf("[CreateOrUpdateMemberUser] After CreateUser: %+v", newUser)
+
+	member.UserID = &newUser.ID
+	if member.Email == "" && email != "" {
+		member.Email = email
+	}
+	_ = s.repo.UpdateClubMember(member)
+
+	return &newUser, nil
+}
+
+// ----------------------------------------------------------------------
+// COACH SCHEDULE, PAYROLL & CLUB FINANCE SERVICE (MODUL 1 & MODUL 2)
+// ----------------------------------------------------------------------
+
+func (s *Service) UpdateCoachSchedule(coachID uint, req dto.UpdateCoachScheduleRequest) error {
+	coach, err := s.repo.FindCoachByID(coachID)
+	if err != nil || coach == nil {
+		return fmt.Errorf("pelatih tidak ditemukan")
+	}
+	return s.repo.UpdateCoachSchedule(coachID, req.HourlyRate, req.AvailabilitySchedule)
+}
+
+func (s *Service) GetCoachPayrolls(coachID uint, status, period string) ([]domain.CoachPayroll, error) {
+	return s.repo.FindCoachPayrolls(coachID, status, period)
+}
+
+func (s *Service) GetCoachPayrollByID(id uint) (*domain.CoachPayroll, error) {
+	return s.repo.FindCoachPayrollByID(id)
+}
+
+func (s *Service) CreateCoachPayroll(req dto.CoachPayrollRequest, recordedBy string) (*domain.CoachPayroll, error) {
+	coach, err := s.repo.FindCoachByID(req.CoachID)
+	if err != nil || coach == nil {
+		return nil, fmt.Errorf("pelatih tidak ditemukan")
+	}
+
+	if req.HourlyRate <= 0 && coach.HourlyRate > 0 {
+		req.HourlyRate = coach.HourlyRate
+	}
+
+	baseSalary := req.TotalHours * req.HourlyRate
+	totalAmount := baseSalary + req.Bonus - req.Deduction
+	if totalAmount < 0 {
+		totalAmount = 0
+	}
+
+	status := "DRAFT"
+	var paidAt *time.Time
+	if req.ExecutePayment {
+		status = "PAID"
+		now := time.Now()
+		paidAt = &now
+	}
+
+	if req.PaymentMethod == "" {
+		req.PaymentMethod = "TRANSFER"
+	}
+
+	payroll := domain.CoachPayroll{
+		CoachID:       req.CoachID,
+		PeriodTitle:   req.PeriodTitle,
+		StartDate:     req.StartDate,
+		EndDate:       req.EndDate,
+		TotalHours:    req.TotalHours,
+		HourlyRate:    req.HourlyRate,
+		BaseSalary:    baseSalary,
+		Bonus:         req.Bonus,
+		Deduction:     req.Deduction,
+		TotalAmount:   totalAmount,
+		Status:        status,
+		PaidAt:        paidAt,
+		PaymentMethod: req.PaymentMethod,
+		Notes:         req.Notes,
+	}
+
+	if err := s.repo.CreateCoachPayroll(&payroll); err != nil {
+		return nil, fmt.Errorf("gagal menyimpan data rekap gaji: %v", err)
+	}
+
+	// Reload with Coach relation
+	return s.repo.FindCoachPayrollByID(payroll.ID)
+}
+
+func (s *Service) PayCoachPayroll(id uint, paymentMethod, recordedBy string) (*domain.CoachPayroll, error) {
+	payroll, err := s.repo.FindCoachPayrollByID(id)
+	if err != nil || payroll == nil {
+		return nil, fmt.Errorf("data rekap gaji tidak ditemukan")
+	}
+
+	now := time.Now()
+	payroll.Status = "PAID"
+	payroll.PaidAt = &now
+	if paymentMethod != "" {
+		payroll.PaymentMethod = paymentMethod
+	}
+
+	if err := s.repo.UpdateCoachPayroll(payroll); err != nil {
+		return nil, fmt.Errorf("gagal memperbarui status gaji: %v", err)
+	}
+
+	return s.repo.FindCoachPayrollByID(payroll.ID)
+}
+
+func (s *Service) DeleteCoachPayroll(id uint) error {
+	payroll, err := s.repo.FindCoachPayrollByID(id)
+	if err != nil || payroll == nil {
+		return fmt.Errorf("data rekap gaji tidak ditemukan")
+	}
+
+	return s.repo.DeleteCoachPayroll(id)
+}
+
+// ----------------------------------------------------------------------
+// CLUB FINANCE SERVICE (FR-ADM-04, FR-ADM-05)
+// ----------------------------------------------------------------------
+
+func (s *Service) GetFinanceSummary() (*dto.FinanceSummaryResponse, error) {
+	income, expense, net, totalTx, err := s.repo.GetFinanceSummary()
+	if err != nil {
+		return nil, err
+	}
+	return &dto.FinanceSummaryResponse{
+		NetBalance:        net,
+		TotalIncome:       income,
+		TotalExpense:      expense,
+		TotalTransactions: totalTx,
+	}, nil
+}
+
+func (s *Service) GetFinanceTransactions(txType, category, startDate, endDate, search string) ([]domain.FinanceTransaction, error) {
+	return s.repo.FindFinanceTransactions(txType, category, startDate, endDate, search)
+}
+
+func (s *Service) CreateFinanceTransaction(req dto.FinanceTransactionRequest, recordedBy string) (*domain.FinanceTransaction, error) {
+	if req.Amount <= 0 {
+		return nil, fmt.Errorf("nominal transaksi harus lebih besar dari 0")
+	}
+	if req.Title == "" {
+		return nil, fmt.Errorf("judul transaksi wajib diisi")
+	}
+	if req.TransactionDate == "" {
+		req.TransactionDate = time.Now().Format("2006-01-02")
+	}
+	if req.TransactionType != "IN" && req.TransactionType != "OUT" {
+		return nil, fmt.Errorf("tipe transaksi harus IN (Kas Masuk) atau OUT (Kas Keluar)")
+	}
+	if req.Category == "" {
+		if req.TransactionType == "IN" {
+			req.Category = "Iuran Anggota"
+		} else {
+			req.Category = "Operasional"
+		}
+	}
+	if req.PaymentMethod == "" {
+		req.PaymentMethod = "TRANSFER"
+	}
+
+	tx := domain.FinanceTransaction{
+		TransactionType: req.TransactionType,
+		Category:        req.Category,
+		Amount:          req.Amount,
+		TransactionDate: req.TransactionDate,
+		Title:           req.Title,
+		Description:     req.Description,
+		PaymentMethod:   req.PaymentMethod,
+		ReferenceNumber: req.ReferenceNumber,
+		AttachmentURL:   req.AttachmentURL,
+		RecordedBy:      recordedBy,
+	}
+
+	if err := s.repo.CreateFinanceTransaction(&tx); err != nil {
+		return nil, fmt.Errorf("gagal mencatat transaksi kas: %v", err)
+	}
+
+	return &tx, nil
+}
+
+func (s *Service) UpdateFinanceTransaction(id uint, req dto.FinanceTransactionRequest) (*domain.FinanceTransaction, error) {
+	tx, err := s.repo.FindFinanceTransactionByID(id)
+	if err != nil || tx == nil {
+		return nil, fmt.Errorf("transaksi tidak ditemukan")
+	}
+
+	if req.Amount <= 0 {
+		return nil, fmt.Errorf("nominal transaksi harus lebih besar dari 0")
+	}
+	if req.Title != "" {
+		tx.Title = req.Title
+	}
+	tx.Amount = req.Amount
+	if req.Category != "" {
+		tx.Category = req.Category
+	}
+	if req.TransactionDate != "" {
+		tx.TransactionDate = req.TransactionDate
+	}
+	if req.TransactionType != "" {
+		tx.TransactionType = req.TransactionType
+	}
+	tx.Description = req.Description
+	if req.PaymentMethod != "" {
+		tx.PaymentMethod = req.PaymentMethod
+	}
+	tx.ReferenceNumber = req.ReferenceNumber
+	if req.AttachmentURL != "" {
+		tx.AttachmentURL = req.AttachmentURL
+	}
+
+	if err := s.repo.UpdateFinanceTransaction(tx); err != nil {
+		return nil, fmt.Errorf("gagal memperbarui transaksi: %v", err)
+	}
+	return tx, nil
+}
+
+func (s *Service) DeleteFinanceTransaction(id uint) error {
+	tx, err := s.repo.FindFinanceTransactionByID(id)
+	if err != nil || tx == nil {
+		return fmt.Errorf("transaksi tidak ditemukan")
+	}
+
+	return s.repo.DeleteFinanceTransaction(id)
 }
 
 

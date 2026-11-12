@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -57,22 +58,16 @@ func (r *Repository) AutoMigrate() error {
 		&domain.TimeTrialEntry{},
 		&domain.TimeTrialHeat{},
 		&domain.TimeTrialLane{},
+		&domain.CoachPayroll{},
+		&domain.FinanceTransaction{},
 	)
 	if err != nil {
 		return err
 	}
 
-	// Ensure default true for is_active on existing participants & registrations
+	// Ensure default true for is_active on existing participants & registrations (hanya jika NULL)
 	_ = r.db.Model(&domain.Participant{}).Where("is_active IS NULL").Update("is_active", true).Error
 	_ = r.db.Model(&domain.Registration{}).Where("is_active IS NULL").Update("is_active", true).Error
-	var activeParticipantsCount int64
-	r.db.Model(&domain.Participant{}).Where("is_active = ?", true).Count(&activeParticipantsCount)
-	var totalParticipantsCount int64
-	r.db.Model(&domain.Participant{}).Count(&totalParticipantsCount)
-	if totalParticipantsCount > 0 && activeParticipantsCount == 0 {
-		_ = r.db.Model(&domain.Participant{}).Where("1 = 1").Update("is_active", true).Error
-		_ = r.db.Model(&domain.Registration{}).Where("1 = 1").Update("is_active", true).Error
-	}
 
 	// Clean up any zero/placeholder times in registrations so they are not treated as finished
 	_ = r.db.Exec(`
@@ -86,7 +81,159 @@ func (r *Repository) AutoMigrate() error {
 		WHERE final_result_time IN ('00.00.00', '00:00.00', '00.00', '00', '0', '-')
 	`).Error
 
+	// Bersihkan akun user kosong yang invalid
+	_ = r.db.Exec("DELETE FROM users WHERE username = '' OR email = ''").Error
+
+	r.EnsureDefaultRolesAndSyncUsers()
+
 	return nil
+}
+
+func (r *Repository) EnsureDefaultRolesAndSyncUsers() {
+	defaultRoles := []domain.Role{
+		{
+			Name:        "Super Admin",
+			Description: "Role sistem dengan hak akses penuh ke seluruh modul & pengaturan",
+			Permissions: `["*"]`,
+			IsSystem:    true,
+		},
+		{
+			Name:        "Coach",
+			Description: "Role Pelatih Klub MASC (Akses Terbuka)",
+			Permissions: `["*"]`,
+			IsSystem:    false,
+		},
+		{
+			Name:        "Anggota Club",
+			Description: "Role Anggota / Atlet Klub MASC (Akses Terbuka)",
+			Permissions: `["*"]`,
+			IsSystem:    false,
+		},
+	}
+
+	for _, role := range defaultRoles {
+		var existing domain.Role
+		if err := r.db.Where("name = ?", role.Name).First(&existing).Error; err != nil {
+			_ = r.db.Create(&role).Error
+		} else {
+			// Update permissions to ["*"] to ensure open access
+			_ = r.db.Model(&existing).Update("permissions", `["*"]`).Error
+		}
+	}
+
+	var coachRole domain.Role
+	_ = r.db.Where("name = ?", "Coach").First(&coachRole).Error
+
+	var memberRole domain.Role
+	_ = r.db.Where("name = ?", "Anggota Club").First(&memberRole).Error
+
+	defaultHashedPassword, _ := security.HashPassword("password123")
+
+	// 1. Sync Existing Coaches yang belum memiliki akun login
+	var coaches []domain.Coach
+	if err := r.db.Find(&coaches).Error; err == nil {
+		for _, coach := range coaches {
+			if coach.UserID == nil || *coach.UserID == 0 {
+				var existingUser domain.User
+				if err := r.db.Where("coach_id = ?", coach.ID).First(&existingUser).Error; err == nil {
+					_ = r.db.Model(&coach).Update("user_id", existingUser.ID).Error
+					continue
+				}
+
+				cleanName := strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9]+`).ReplaceAllString(coach.Name, "_"))
+				cleanName = strings.Trim(cleanName, "_")
+				if !strings.HasPrefix(cleanName, "coach_") {
+					cleanName = "coach_" + cleanName
+				}
+				username := cleanName
+
+				var count int64
+				r.db.Model(&domain.User{}).Where("username = ?", username).Count(&count)
+				if count > 0 {
+					username = fmt.Sprintf("%s_%d", username, coach.ID)
+				}
+
+				email := coach.Email
+				if email == "" {
+					email = fmt.Sprintf("%s@masc.club", username)
+				}
+				// Pastikan email unik agar tidak terjadi duplicate key violation saat deployment
+				var emailCount int64
+				r.db.Model(&domain.User{}).Where("email = ?", email).Count(&emailCount)
+				if emailCount > 0 {
+					email = fmt.Sprintf("%s_%d@masc.club", username, coach.ID)
+				}
+
+				newUser := domain.User{
+					Username:     username,
+					Email:        email,
+					PasswordHash: defaultHashedPassword,
+					RoleID:       &coachRole.ID,
+					Role:         coachRole.Name,
+					CoachID:      &coach.ID,
+					Status:       "active",
+				}
+				if err := r.db.Create(&newUser).Error; err == nil {
+					_ = r.db.Model(&coach).Update("user_id", newUser.ID).Error
+					log.Printf("[Auto-Sync Deployment] Existing Coach '%s' linked to login user @%s (Role: Coach)", coach.Name, username)
+				}
+			}
+		}
+	}
+
+	// 2. Sync Existing Club Members yang belum memiliki akun login
+	var members []domain.ClubMember
+	if err := r.db.Find(&members).Error; err == nil {
+		for _, member := range members {
+			if member.UserID == nil || *member.UserID == 0 {
+				var existingUser domain.User
+				if err := r.db.Where("club_member_id = ?", member.ID).First(&existingUser).Error; err == nil {
+					_ = r.db.Model(&member).Update("user_id", existingUser.ID).Error
+					continue
+				}
+
+				var username string
+				if strings.TrimSpace(member.MemberNumber) != "" {
+					cleanNum := strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9]+`).ReplaceAllString(member.MemberNumber, "_"))
+					username = strings.Trim(cleanNum, "_")
+				} else {
+					cleanName := strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9]+`).ReplaceAllString(member.FullName, "_"))
+					username = "member_" + strings.Trim(cleanName, "_")
+				}
+
+				var count int64
+				r.db.Model(&domain.User{}).Where("username = ?", username).Count(&count)
+				if count > 0 {
+					username = fmt.Sprintf("%s_%d", username, member.ID)
+				}
+
+				email := member.Email
+				if email == "" {
+					email = fmt.Sprintf("%s@masc.club", username)
+				}
+				// Pastikan email unik agar tidak terjadi duplicate key violation saat deployment (misal orang tua memakai email sama untuk 2 anak)
+				var emailCount int64
+				r.db.Model(&domain.User{}).Where("email = ?", email).Count(&emailCount)
+				if emailCount > 0 {
+					email = fmt.Sprintf("%s_%d@masc.club", username, member.ID)
+				}
+
+				newUser := domain.User{
+					Username:     username,
+					Email:        email,
+					PasswordHash: defaultHashedPassword,
+					RoleID:       &memberRole.ID,
+					Role:         memberRole.Name,
+					ClubMemberID: &member.ID,
+					Status:       "active",
+				}
+				if err := r.db.Create(&newUser).Error; err == nil {
+					_ = r.db.Model(&member).Update("user_id", newUser.ID).Error
+					log.Printf("[Auto-Sync Deployment] Existing Club Member '%s' (%s) linked to login user @%s (Role: Anggota Club)", member.FullName, member.MemberNumber, username)
+				}
+			}
+		}
+	}
 }
 
 func (r *Repository) SeedInitialData() error {
@@ -747,8 +894,11 @@ func (r *Repository) SeedInitialData() error {
 // Database Query Methods
 func (r *Repository) FindUserByUsername(username string) (*domain.User, error) {
 	var user domain.User
-	err := r.db.Preload("RoleRel").Where("username = ?", username).First(&user).Error
-	return &user, err
+	err := r.db.Preload("RoleRel").Where("username = ? OR email = ?", username, username).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *Repository) FindBanners() ([]domain.BannerSlide, error) {
@@ -1172,8 +1322,17 @@ func (r *Repository) SaveCoachSectionConfig(cfg *domain.CoachSectionConfig) erro
 
 func (r *Repository) FindCoaches() ([]domain.Coach, error) {
 	var coaches []domain.Coach
-	err := r.db.Order("sort_order asc, id asc").Find(&coaches).Error
+	err := r.db.Preload("User").Order("sort_order asc, id asc").Find(&coaches).Error
 	return coaches, err
+}
+
+func (r *Repository) FindCoachByID(id uint) (*domain.Coach, error) {
+	var coach domain.Coach
+	err := r.db.Preload("User").First(&coach, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &coach, nil
 }
 
 func (r *Repository) SaveCoach(c *domain.Coach) error {
@@ -1516,7 +1675,19 @@ func (r *Repository) FindRoles() ([]domain.Role, error) {
 func (r *Repository) FindRoleByID(id uint) (*domain.Role, error) {
 	var role domain.Role
 	err := r.db.First(&role, id).Error
-	return &role, err
+	if err != nil {
+		return nil, err
+	}
+	return &role, nil
+}
+
+func (r *Repository) FindRoleByName(name string) (*domain.Role, error) {
+	var role domain.Role
+	err := r.db.Where("name = ?", name).First(&role).Error
+	if err != nil {
+		return nil, err
+	}
+	return &role, nil
 }
 
 func (r *Repository) CreateRole(role *domain.Role) error {
@@ -1546,7 +1717,10 @@ func (r *Repository) FindUsers() ([]domain.User, error) {
 func (r *Repository) FindUserByID(id uint) (*domain.User, error) {
 	var user domain.User
 	err := r.db.Preload("RoleRel").First(&user, id).Error
-	return &user, err
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *Repository) CreateUser(user *domain.User) error {
@@ -1568,7 +1742,7 @@ func (r *Repository) DeleteUser(id uint) error {
 // 1. Club Member
 func (r *Repository) FindClubMembers(search, status, gender string) ([]domain.ClubMember, error) {
 	var members []domain.ClubMember
-	query := r.db.Model(&domain.ClubMember{})
+	query := r.db.Model(&domain.ClubMember{}).Preload("User")
 	if search != "" {
 		s := "%" + strings.ToLower(strings.TrimSpace(search)) + "%"
 		query = query.Where("LOWER(full_name) LIKE ? OR LOWER(member_number) LIKE ? OR LOWER(nickname) LIKE ? OR phone LIKE ?", s, s, s, s)
@@ -1585,8 +1759,11 @@ func (r *Repository) FindClubMembers(search, status, gender string) ([]domain.Cl
 
 func (r *Repository) FindClubMemberByID(id uint) (*domain.ClubMember, error) {
 	var member domain.ClubMember
-	err := r.db.First(&member, id).Error
-	return &member, err
+	err := r.db.Preload("User").First(&member, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &member, nil
 }
 
 func (r *Repository) CreateClubMember(m *domain.ClubMember) error {
@@ -1880,6 +2057,122 @@ func (r *Repository) CalculateTimeTrialRanks(sessionID uint, strokeID uint) erro
 	}
 
 	return nil
+}
+
+// ----------------------------------------------------------------------
+// COACH PAYROLL & CLUB FINANCE REPOSITORY (MODUL 1 & MODUL 2)
+// ----------------------------------------------------------------------
+
+func (r *Repository) UpdateCoachSchedule(coachID uint, hourlyRate float64, schedule string) error {
+	updates := map[string]interface{}{
+		"availability_schedule": schedule,
+	}
+	if hourlyRate > 0 {
+		updates["hourly_rate"] = hourlyRate
+	}
+	return r.db.Model(&domain.Coach{}).Where("id = ?", coachID).Updates(updates).Error
+}
+
+func (r *Repository) FindCoachPayrolls(coachID uint, status, period string) ([]domain.CoachPayroll, error) {
+	var payrolls []domain.CoachPayroll
+	query := r.db.Model(&domain.CoachPayroll{}).Preload("Coach")
+	if coachID > 0 {
+		query = query.Where("coach_id = ?", coachID)
+	}
+	if status != "" && status != "all" {
+		query = query.Where("status = ?", status)
+	}
+	if period != "" {
+		query = query.Where("period_title LIKE ?", "%"+period+"%")
+	}
+	err := query.Order("id desc").Find(&payrolls).Error
+	return payrolls, err
+}
+
+func (r *Repository) FindCoachPayrollByID(id uint) (*domain.CoachPayroll, error) {
+	var p domain.CoachPayroll
+	err := r.db.Preload("Coach").First(&p, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (r *Repository) CreateCoachPayroll(p *domain.CoachPayroll) error {
+	return r.db.Create(p).Error
+}
+
+func (r *Repository) UpdateCoachPayroll(p *domain.CoachPayroll) error {
+	return r.db.Save(p).Error
+}
+
+func (r *Repository) DeleteCoachPayroll(id uint) error {
+	return r.db.Delete(&domain.CoachPayroll{}, id).Error
+}
+
+// Finance Transactions
+func (r *Repository) FindFinanceTransactions(txType, category, startDate, endDate, search string) ([]domain.FinanceTransaction, error) {
+	var txs []domain.FinanceTransaction
+	query := r.db.Model(&domain.FinanceTransaction{})
+
+	if txType != "" && txType != "all" {
+		query = query.Where("transaction_type = ?", txType)
+	}
+	if category != "" && category != "all" {
+		query = query.Where("category = ?", category)
+	}
+	if startDate != "" {
+		query = query.Where("transaction_date >= ?", startDate)
+	}
+	if endDate != "" {
+		query = query.Where("transaction_date <= ?", endDate)
+	}
+	if search != "" {
+		s := "%" + strings.ToLower(strings.TrimSpace(search)) + "%"
+		query = query.Where("LOWER(title) LIKE ? OR LOWER(description) LIKE ? OR LOWER(reference_number) LIKE ?", s, s, s)
+	}
+
+	err := query.Order("transaction_date desc, id desc").Find(&txs).Error
+	return txs, err
+}
+
+func (r *Repository) FindFinanceTransactionByID(id uint) (*domain.FinanceTransaction, error) {
+	var t domain.FinanceTransaction
+	err := r.db.First(&t, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (r *Repository) CreateFinanceTransaction(t *domain.FinanceTransaction) error {
+	return r.db.Create(t).Error
+}
+
+func (r *Repository) UpdateFinanceTransaction(t *domain.FinanceTransaction) error {
+	return r.db.Save(t).Error
+}
+
+func (r *Repository) DeleteFinanceTransaction(id uint) error {
+	return r.db.Delete(&domain.FinanceTransaction{}, id).Error
+}
+
+func (r *Repository) GetFinanceSummary() (income, expense, net float64, totalTx int64, err error) {
+	var inSum struct {
+		Total float64
+	}
+	var outSum struct {
+		Total float64
+	}
+
+	_ = r.db.Model(&domain.FinanceTransaction{}).Where("transaction_type = ?", "IN").Select("COALESCE(SUM(amount), 0) as total").Scan(&inSum).Error
+	_ = r.db.Model(&domain.FinanceTransaction{}).Where("transaction_type = ?", "OUT").Select("COALESCE(SUM(amount), 0) as total").Scan(&outSum).Error
+	_ = r.db.Model(&domain.FinanceTransaction{}).Count(&totalTx).Error
+
+	income = inSum.Total
+	expense = outSum.Total
+	net = income - expense
+	return income, expense, net, totalTx, nil
 }
 
 

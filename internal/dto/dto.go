@@ -52,15 +52,29 @@ type UserUpdateRequest struct {
 }
 
 type UserDetailResponse struct {
-	ID        uint          `json:"id"`
-	Username  string        `json:"username"`
-	Email     string        `json:"email"`
-	RoleID    *uint         `json:"role_id"`
-	RoleName  string        `json:"role_name"`
-	Role      *RoleResponse `json:"role,omitempty"`
-	Status    string        `json:"status"`
-	CreatedAt string        `json:"created_at"`
-	UpdatedAt string        `json:"updated_at"`
+	ID           uint          `json:"id"`
+	Username     string        `json:"username"`
+	Email        string        `json:"email"`
+	RoleID       *uint         `json:"role_id"`
+	RoleName     string        `json:"role_name"`
+	Role         *RoleResponse `json:"role,omitempty"`
+	CoachID      *uint         `json:"coach_id,omitempty"`
+	ClubMemberID *uint         `json:"club_member_id,omitempty"`
+	Status       string        `json:"status"`
+	CreatedAt    string        `json:"created_at"`
+	UpdatedAt    string        `json:"updated_at"`
+}
+
+type CreateCoachUserRequest struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type CreateMemberUserRequest struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 type RegisterParticipantRequest struct {
@@ -229,4 +243,46 @@ type SaveTournamentRequest struct {
 	IsActive              bool   `json:"is_active"`
 	IsBukuAcaraLocked     bool   `json:"is_buku_acara_locked"`
 	IsBukuAcaraPublished  bool   `json:"is_buku_acara_published"`
+}
+
+// ----------------------------------------------------------------------
+// COACH PAYROLL & CLUB FINANCE DTOS (MODUL 1 & MODUL 2)
+// ----------------------------------------------------------------------
+
+type UpdateCoachScheduleRequest struct {
+	HourlyRate           float64 `json:"hourly_rate"`
+	AvailabilitySchedule string  `json:"availability_schedule"`
+}
+
+type CoachPayrollRequest struct {
+	CoachID        uint    `json:"coach_id"`
+	PeriodTitle    string  `json:"period_title"`
+	StartDate      string  `json:"start_date"`
+	EndDate        string  `json:"end_date"`
+	TotalHours     float64 `json:"total_hours"`
+	HourlyRate     float64 `json:"hourly_rate"`
+	Bonus          float64 `json:"bonus"`
+	Deduction      float64 `json:"deduction"`
+	PaymentMethod  string  `json:"payment_method"`
+	Notes          string  `json:"notes"`
+	ExecutePayment bool    `json:"execute_payment"`
+}
+
+type FinanceTransactionRequest struct {
+	TransactionType string  `json:"transaction_type"` // IN or OUT
+	Category        string  `json:"category"`
+	Amount          float64 `json:"amount"`
+	TransactionDate string  `json:"transaction_date"`
+	Title           string  `json:"title"`
+	Description     string  `json:"description"`
+	PaymentMethod   string  `json:"payment_method"`
+	ReferenceNumber string  `json:"reference_number"`
+	AttachmentURL   string  `json:"attachment_url"`
+}
+
+type FinanceSummaryResponse struct {
+	NetBalance        float64 `json:"net_balance"`
+	TotalIncome       float64 `json:"total_income"`
+	TotalExpense      float64 `json:"total_expense"`
+	TotalTransactions int64   `json:"total_transactions"`
 }

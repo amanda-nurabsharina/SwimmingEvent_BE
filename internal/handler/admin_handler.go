@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
@@ -637,6 +638,27 @@ func (h *AdminHandler) DeleteCoach(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "Coach deleted successfully", nil)
 }
 
+func (h *AdminHandler) CreateOrUpdateCoachUser(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid coach ID", nil)
+	}
+
+	var req dto.CreateCoachUserRequest
+	if err := c.BodyParser(&req); err != nil {
+		log.Printf("[CreateOrUpdateCoachUser] BodyParser error: %v", err)
+	}
+	log.Printf("[CreateOrUpdateCoachUser] Raw Body: %s | Parsed Req: %+v", string(c.Body()), req)
+
+	user, err := h.svc.CreateOrUpdateCoachUser(uint(id), req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Akun login coach berhasil disiapkan", user)
+}
+
 func (h *AdminHandler) GetFacilitySectionConfig(c *fiber.Ctx) error {
 	cfg, err := h.svc.GetFacilitySectionConfig()
 	if err != nil {
@@ -1124,6 +1146,27 @@ func (h *AdminHandler) DeleteClubMember(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "Club member deleted successfully", nil)
 }
 
+func (h *AdminHandler) CreateOrUpdateMemberUser(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid member ID", nil)
+	}
+
+	var req dto.CreateMemberUserRequest
+	if err := c.BodyParser(&req); err != nil {
+		log.Printf("[CreateOrUpdateMemberUser] BodyParser error: %v", err)
+	}
+	log.Printf("[CreateOrUpdateMemberUser] Raw Body: %s | Parsed Req: %+v", string(c.Body()), req)
+
+	user, err := h.svc.CreateOrUpdateMemberUser(uint(id), req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Akun login anggota klub berhasil disiapkan", user)
+}
+
 func (h *AdminHandler) GetClubMemberSpeedHistory(c *fiber.Ctx) error {
 	id, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
@@ -1367,6 +1410,195 @@ func (h *AdminHandler) CalculateTimeTrialRanks(c *fiber.Ctx) error {
 		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
 	}
 	return response.Success(c, fiber.StatusOK, "Ranks calculated successfully", nil)
+}
+
+// ----------------------------------------------------------------------
+// COACH SCHEDULE, PAYROLL & CLUB FINANCE HANDLERS (MODUL 1 & MODUL 2)
+// ----------------------------------------------------------------------
+
+func (h *AdminHandler) UpdateCoachSchedule(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid coach ID", nil)
+	}
+
+	var req dto.UpdateCoachScheduleRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload format", err.Error())
+	}
+
+	if err := h.svc.UpdateCoachSchedule(uint(id), req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Jadwal dan tarif pelatih berhasil diperbarui", nil)
+}
+
+func (h *AdminHandler) GetCoachPayrolls(c *fiber.Ctx) error {
+	coachID, _ := strconv.Atoi(c.Query("coach_id", "0"))
+	status := c.Query("status", "")
+	period := c.Query("period", "")
+
+	payrolls, err := h.svc.GetCoachPayrolls(uint(coachID), status, period)
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Data penggajian berhasil dimuat", payrolls)
+}
+
+func (h *AdminHandler) GetCoachPayrollByID(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payroll ID", nil)
+	}
+
+	payroll, err := h.svc.GetCoachPayrollByID(uint(id))
+	if err != nil || payroll == nil {
+		return response.Error(c, fiber.StatusNotFound, "Data penggajian tidak ditemukan", nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Detail penggajian berhasil dimuat", payroll)
+}
+
+func (h *AdminHandler) CreateCoachPayroll(c *fiber.Ctx) error {
+	var req dto.CoachPayrollRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload format", err.Error())
+	}
+
+	if req.CoachID == 0 {
+		return response.Error(c, fiber.StatusBadRequest, "Coach ID wajib diisi", nil)
+	}
+	if req.PeriodTitle == "" {
+		return response.Error(c, fiber.StatusBadRequest, "Judul periode penggajian wajib diisi", nil)
+	}
+
+	operator, _ := c.Locals("username").(string)
+	if operator == "" {
+		operator = "Admin"
+	}
+
+	payroll, err := h.svc.CreateCoachPayroll(req, operator)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusCreated, "Penggajian coach berhasil disimpan", payroll)
+}
+
+func (h *AdminHandler) PayCoachPayroll(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payroll ID", nil)
+	}
+
+	var req struct {
+		PaymentMethod string `json:"payment_method"`
+	}
+	_ = c.BodyParser(&req)
+
+	operator, _ := c.Locals("username").(string)
+	if operator == "" {
+		operator = "Admin"
+	}
+
+	payroll, err := h.svc.PayCoachPayroll(uint(id), req.PaymentMethod, operator)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Pembayaran gaji berhasil dieksekusi dan otomatis dibukukan ke Kas Keluar", payroll)
+}
+
+func (h *AdminHandler) DeleteCoachPayroll(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payroll ID", nil)
+	}
+
+	if err := h.svc.DeleteCoachPayroll(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Data penggajian berhasil dihapus", nil)
+}
+
+// ----------------------------------------------------------------------
+// CLUB FINANCE HANDLERS (MODUL 2)
+// ----------------------------------------------------------------------
+
+func (h *AdminHandler) GetFinanceSummary(c *fiber.Ctx) error {
+	summary, err := h.svc.GetFinanceSummary()
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Ringkasan kas keuangan berhasil dimuat", summary)
+}
+
+func (h *AdminHandler) GetFinanceTransactions(c *fiber.Ctx) error {
+	txType := c.Query("type", "")
+	category := c.Query("category", "")
+	startDate := c.Query("start_date", "")
+	endDate := c.Query("end_date", "")
+	search := c.Query("search", "")
+
+	txs, err := h.svc.GetFinanceTransactions(txType, category, startDate, endDate, search)
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+	return response.Success(c, fiber.StatusOK, "Daftar transaksi kas berhasil dimuat", txs)
+}
+
+func (h *AdminHandler) CreateFinanceTransaction(c *fiber.Ctx) error {
+	var req dto.FinanceTransactionRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload format", err.Error())
+	}
+
+	operator, _ := c.Locals("username").(string)
+	if operator == "" {
+		operator = "Admin"
+	}
+
+	tx, err := h.svc.CreateFinanceTransaction(req, operator)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusCreated, "Transaksi kas berhasil dicatat", tx)
+}
+
+func (h *AdminHandler) UpdateFinanceTransaction(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid transaction ID", nil)
+	}
+
+	var req dto.FinanceTransactionRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid payload format", err.Error())
+	}
+
+	tx, err := h.svc.UpdateFinanceTransaction(uint(id), req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Transaksi kas berhasil diperbarui", tx)
+}
+
+func (h *AdminHandler) DeleteFinanceTransaction(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Invalid transaction ID", nil)
+	}
+
+	if err := h.svc.DeleteFinanceTransaction(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Transaksi kas berhasil dihapus", nil)
 }
 
 
