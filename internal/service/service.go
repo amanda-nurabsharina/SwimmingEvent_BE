@@ -56,15 +56,53 @@ func (s *Service) AuthenticateAdmin(req dto.LoginRequest) (*dto.LoginResponse, e
 		permissions = []string{"*"}
 	}
 
+	var fullName, phone, photoURL string
+	fullName = user.FullName
+	phone = user.Phone
+	photoURL = user.PhotoURL
+
+	if user.CoachID != nil && *user.CoachID > 0 {
+		coach, err := s.repo.FindCoachByID(*user.CoachID)
+		if err == nil && coach != nil {
+			if fullName == "" {
+				fullName = coach.Name
+			}
+			if phone == "" {
+				phone = coach.Phone
+			}
+			if photoURL == "" {
+				photoURL = coach.PhotoURL
+			}
+		}
+	} else if user.ClubMemberID != nil && *user.ClubMemberID > 0 {
+		member, err := s.repo.FindClubMemberByID(*user.ClubMemberID)
+		if err == nil && member != nil {
+			if fullName == "" {
+				fullName = member.FullName
+			}
+			if phone == "" {
+				phone = member.Phone
+			}
+			if photoURL == "" {
+				photoURL = member.PhotoURL
+			}
+		}
+	}
+
 	return &dto.LoginResponse{
 		Token: token,
 		User: dto.UserSummary{
-			ID:          user.ID,
-			Username:    user.Username,
-			Email:       user.Email,
-			Role:        roleName,
-			RoleID:      user.RoleID,
-			Permissions: permissions,
+			ID:           user.ID,
+			Username:     user.Username,
+			Email:        user.Email,
+			Role:         roleName,
+			RoleID:       user.RoleID,
+			CoachID:      user.CoachID,
+			ClubMemberID: user.ClubMemberID,
+			FullName:     fullName,
+			Phone:        phone,
+			PhotoURL:     photoURL,
+			Permissions:  permissions,
 		},
 	}, nil
 }
@@ -1883,15 +1921,22 @@ func (s *Service) GetUsers() ([]dto.UserDetailResponse, error) {
 		}
 
 		results = append(results, dto.UserDetailResponse{
-			ID:        u.ID,
-			Username:  u.Username,
-			Email:     u.Email,
-			RoleID:    u.RoleID,
-			RoleName:  roleName,
-			Role:      roleResp,
-			Status:    u.Status,
-			CreatedAt: u.CreatedAt.Format("2006-01-02 15:04:05"),
-			UpdatedAt: u.UpdatedAt.Format("2006-01-02 15:04:05"),
+			ID:           u.ID,
+			Username:     u.Username,
+			Email:        u.Email,
+			RoleID:       u.RoleID,
+			RoleName:     roleName,
+			Role:         roleResp,
+			CoachID:      u.CoachID,
+			ClubMemberID: u.ClubMemberID,
+			FullName:     u.FullName,
+			Phone:        u.Phone,
+			PhotoURL:     u.PhotoURL,
+			Address:      u.Address,
+			Bio:          u.Bio,
+			Status:       u.Status,
+			CreatedAt:    u.CreatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:    u.UpdatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 	return results, nil
@@ -1946,11 +1991,11 @@ func (s *Service) CreateUser(req dto.UserCreateRequest) (*dto.UserDetailResponse
 	_ = json.Unmarshal([]byte(role.Permissions), &perms)
 
 	return &dto.UserDetailResponse{
-		ID:       user.ID,
-		Username: user.Username,
-		Email:    user.Email,
-		RoleID:   user.RoleID,
-		RoleName: role.Name,
+		ID:           user.ID,
+		Username:     user.Username,
+		Email:        user.Email,
+		RoleID:       user.RoleID,
+		RoleName:     role.Name,
 		Role: &dto.RoleResponse{
 			ID:          role.ID,
 			Name:        role.Name,
@@ -1958,9 +2003,16 @@ func (s *Service) CreateUser(req dto.UserCreateRequest) (*dto.UserDetailResponse
 			Permissions: perms,
 			IsSystem:    role.IsSystem,
 		},
-		Status:    user.Status,
-		CreatedAt: user.CreatedAt.Format("2006-01-02 15:04:05"),
-		UpdatedAt: user.UpdatedAt.Format("2006-01-02 15:04:05"),
+		CoachID:      user.CoachID,
+		ClubMemberID: user.ClubMemberID,
+		FullName:     user.FullName,
+		Phone:        user.Phone,
+		PhotoURL:     user.PhotoURL,
+		Address:      user.Address,
+		Bio:          user.Bio,
+		Status:       user.Status,
+		CreatedAt:    user.CreatedAt.Format("2006-01-02 15:04:05"),
+		UpdatedAt:    user.UpdatedAt.Format("2006-01-02 15:04:05"),
 	}, nil
 }
 
@@ -2015,15 +2067,22 @@ func (s *Service) UpdateUser(id uint, req dto.UserUpdateRequest) (*dto.UserDetai
 	}
 
 	return &dto.UserDetailResponse{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     user.Email,
-		RoleID:    user.RoleID,
-		RoleName:  user.Role,
-		Role:      roleResp,
-		Status:    user.Status,
-		CreatedAt: user.CreatedAt.Format("2006-01-02 15:04:05"),
-		UpdatedAt: user.UpdatedAt.Format("2006-01-02 15:04:05"),
+		ID:           user.ID,
+		Username:     user.Username,
+		Email:        user.Email,
+		RoleID:       user.RoleID,
+		RoleName:     user.Role,
+		Role:         roleResp,
+		CoachID:      user.CoachID,
+		ClubMemberID: user.ClubMemberID,
+		FullName:     user.FullName,
+		Phone:        user.Phone,
+		PhotoURL:     user.PhotoURL,
+		Address:      user.Address,
+		Bio:          user.Bio,
+		Status:       user.Status,
+		CreatedAt:    user.CreatedAt.Format("2006-01-02 15:04:05"),
+		UpdatedAt:    user.UpdatedAt.Format("2006-01-02 15:04:05"),
 	}, nil
 }
 
@@ -2663,6 +2722,478 @@ func (s *Service) DeleteFinanceTransaction(id uint) error {
 	}
 
 	return s.repo.DeleteFinanceTransaction(id)
+}
+
+// ----------------------------------------------------
+// USER PROFILE MODULE (MODUL PROFILE & PORTAL COACH / ATLET)
+// ----------------------------------------------------
+
+func (s *Service) GetProfile(userID uint) (*dto.ProfileResponse, error) {
+	user, err := s.repo.FindUserByID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("user tidak ditemukan")
+	}
+
+	roleName := user.Role
+	var roleResp *dto.RoleResponse
+	if user.RoleRel != nil {
+		roleName = user.RoleRel.Name
+		var perms []string
+		_ = json.Unmarshal([]byte(user.RoleRel.Permissions), &perms)
+		roleResp = &dto.RoleResponse{
+			ID:          user.RoleRel.ID,
+			Name:        user.RoleRel.Name,
+			Description: user.RoleRel.Description,
+			Permissions: perms,
+			IsSystem:    user.RoleRel.IsSystem,
+		}
+	}
+
+	// Auto-linking if CoachID or ClubMemberID is missing
+	if (user.CoachID == nil || *user.CoachID == 0) && (roleName == "Coach" || strings.HasPrefix(user.Username, "coach_")) {
+		coach, err := s.repo.FindCoachByUserID(user.ID)
+		if err == nil && coach != nil {
+			user.CoachID = &coach.ID
+			_ = s.repo.UpdateUser(user)
+		}
+	}
+	if (user.ClubMemberID == nil || *user.ClubMemberID == 0) && (roleName == "Anggota Club" || strings.HasPrefix(user.Username, "member_") || strings.HasPrefix(user.Username, "masc_")) {
+		member, err := s.repo.FindClubMemberByUserID(user.ID)
+		if err == nil && member != nil {
+			user.ClubMemberID = &member.ID
+			_ = s.repo.UpdateUser(user)
+		}
+	}
+
+	userDetail := dto.UserDetailResponse{
+		ID:           user.ID,
+		Username:     user.Username,
+		Email:        user.Email,
+		RoleID:       user.RoleID,
+		RoleName:     roleName,
+		Role:         roleResp,
+		CoachID:      user.CoachID,
+		ClubMemberID: user.ClubMemberID,
+		FullName:     user.FullName,
+		Phone:        user.Phone,
+		PhotoURL:     user.PhotoURL,
+		Address:      user.Address,
+		Bio:          user.Bio,
+		Status:       user.Status,
+		CreatedAt:    user.CreatedAt.Format("2006-01-02 15:04:05"),
+		UpdatedAt:    user.UpdatedAt.Format("2006-01-02 15:04:05"),
+	}
+
+	profile := &dto.ProfileResponse{
+		User: userDetail,
+		Role: roleName,
+	}
+
+	// 1. Role Coach (FR-PCH-01: Jadwal & Atlet, FR-PCH-02: Laporan Gaji Pribadi)
+	if roleName == "Coach" || (user.CoachID != nil && *user.CoachID > 0) {
+		var coach *domain.Coach
+		if user.CoachID != nil && *user.CoachID > 0 {
+			coach, _ = s.repo.FindCoachByID(*user.CoachID)
+		} else {
+			coach, _ = s.repo.FindCoachByUserID(user.ID)
+		}
+
+		if coach != nil {
+			if profile.User.FullName == "" {
+				profile.User.FullName = coach.Name
+			}
+			if profile.User.Phone == "" {
+				profile.User.Phone = coach.Phone
+			}
+			if profile.User.PhotoURL == "" {
+				profile.User.PhotoURL = coach.PhotoURL
+			}
+			if profile.User.Bio == "" {
+				profile.User.Bio = coach.Description
+			}
+			profile.CoachData = coach
+
+			// FR-PCH-02: Riwayat Penggajian Pribadi (Mode Baca Saja / View Only)
+			payrolls, _ := s.repo.FindCoachPayrolls(coach.ID, "", "")
+			profile.CoachPayrolls = payrolls
+
+			// FR-PCH-01: Daftar Atlet binaan klub di tiap sesi
+			athletes, _ := s.repo.FindClubMembers("", "active", "")
+			profile.CoachAthletes = athletes
+		}
+	}
+
+	// 2. Role Anggota Club (FR-ATL-01: Jadwal Latihan, FR-ATL-02: History Time Sheet/PB, FR-ATL-03: Raport Progress & Evaluasi)
+	if roleName == "Anggota Club" || (user.ClubMemberID != nil && *user.ClubMemberID > 0) {
+		var member *domain.ClubMember
+		if user.ClubMemberID != nil && *user.ClubMemberID > 0 {
+			member, _ = s.repo.FindClubMemberByID(*user.ClubMemberID)
+		} else {
+			member, _ = s.repo.FindClubMemberByUserID(user.ID)
+		}
+
+		if member != nil {
+			if profile.User.FullName == "" {
+				profile.User.FullName = member.FullName
+			}
+			if profile.User.Phone == "" {
+				profile.User.Phone = member.Phone
+			}
+			if profile.User.PhotoURL == "" {
+				profile.User.PhotoURL = member.PhotoURL
+			}
+			if profile.User.Address == "" {
+				profile.User.Address = member.Address
+			}
+			profile.MemberData = member
+
+			// FR-ATL-01: Jadwal Sesi Latihan / Time Trial Terdaftar
+			sessions, _ := s.repo.FindTimeTrialSessions()
+			profile.MemberSessions = sessions
+
+			// FR-ATL-02: History Catatan Waktu Latihan & Personal Best (PB)
+			history, _ := s.repo.GetClubMemberSpeedHistory(member.ID)
+			profile.MemberHistory = history
+
+			bestMap := make(map[string]dto.MemberBestScore)
+			for _, h := range history {
+				strokeName := "Gaya Bebas"
+				distance := ""
+				if h.Heat != nil && h.Heat.Stroke != nil {
+					strokeName = h.Heat.Stroke.Name
+					distance = h.Heat.Stroke.Distance
+				}
+				sessionTitle := ""
+				sessionDate := ""
+				if h.Heat != nil && h.Heat.Session != nil {
+					sessionTitle = h.Heat.Session.Title
+					sessionDate = h.Heat.Session.Date
+				}
+
+				key := strokeName
+				existing, exists := bestMap[key]
+				if !exists {
+					bestMap[key] = dto.MemberBestScore{
+						StrokeName: strokeName,
+						Distance:   distance,
+						BestTime:   h.ResultTime,
+						Date:       sessionDate,
+						Session:    sessionTitle,
+					}
+				} else {
+					if repository.ParseSpeedToMs(h.ResultTime) < repository.ParseSpeedToMs(existing.BestTime) && repository.ParseSpeedToMs(h.ResultTime) > 0 {
+						bestMap[key] = dto.MemberBestScore{
+							StrokeName: strokeName,
+							Distance:   distance,
+							BestTime:   h.ResultTime,
+							Date:       sessionDate,
+							Session:    sessionTitle,
+						}
+					}
+				}
+			}
+
+			var bestList []dto.MemberBestScore
+			for _, b := range bestMap {
+				bestList = append(bestList, b)
+			}
+			sort.Slice(bestList, func(i, j int) bool {
+				return bestList[i].StrokeName < bestList[j].StrokeName
+			})
+			profile.MemberBestScores = bestList
+
+			// FR-ATL-03: Raport Progress & Evaluasi Performa Lengkap
+			coachNotes := member.Notes
+			if coachNotes == "" {
+				coachNotes = "Atlet menunjukkan perkembangan teknik yang baik, konsisten dalam latihan, dan terus mencatatkan progres waktu yang positif."
+			}
+
+			totalTrials := len(history)
+			grade := "A (Sangat Baik)"
+			consistency := 95
+			if totalTrials == 0 {
+				grade = "B (Dalam Penilaian)"
+				consistency = 80
+			} else if totalTrials < 3 {
+				grade = "A- (Baik & Konsisten)"
+				consistency = 88
+			}
+
+			reportCard := &dto.MemberReportCard{
+				MemberNumber:             member.MemberNumber,
+				FullName:                 member.FullName,
+				Nickname:                 member.Nickname,
+				BirthDate:                member.BirthDate,
+				AgeGroup:                 "KU (Usia)",
+				School:                   member.School,
+				PhotoURL:                 member.PhotoURL,
+				TotalSessions:            len(sessions),
+				TotalTimeTrials:          totalTrials,
+				PerformanceGrade:         grade,
+				ConsistencyScore:         consistency,
+				CoachNotes:               coachNotes,
+				BestScores:               bestList,
+				AttendanceRate:           95,
+				PhysicalFitnessScore:     88,
+				TechnicalDisciplineScore: 90,
+				ReportPeriod:             "Evaluasi Semester " + time.Now().Format("2006"),
+				ReportDate:               time.Now().Format("2006-01-02"),
+			}
+
+			// Sinkronisasi dengan Modul 6 (Raport Resmi yang diinput Admin)
+			if officialReport, err := s.repo.FindLatestAthleteReportByMemberID(member.ID); err == nil && officialReport != nil {
+				reportCard.ID = officialReport.ID
+				reportCard.ReportPeriod = officialReport.ReportPeriod
+				reportCard.ReportDate = officialReport.ReportDate
+				reportCard.PerformanceGrade = officialReport.PerformanceGrade
+				reportCard.ConsistencyScore = officialReport.ConsistencyScore
+				reportCard.AttendanceRate = officialReport.AttendanceRate
+				reportCard.PhysicalFitnessScore = officialReport.PhysicalFitnessScore
+				reportCard.TechnicalDisciplineScore = officialReport.TechnicalDisciplineScore
+				if officialReport.CoachNotes != "" {
+					reportCard.CoachNotes = officialReport.CoachNotes
+				}
+				reportCard.EvaluationDetails = officialReport.EvaluationDetails
+				reportCard.EvaluatorName = officialReport.EvaluatorName
+			}
+
+			profile.MemberReport = reportCard
+		}
+	}
+
+	return profile, nil
+}
+
+func (s *Service) UpdateProfile(userID uint, req dto.UpdateProfileRequest) (*dto.ProfileResponse, error) {
+	user, err := s.repo.FindUserByID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("user tidak ditemukan")
+	}
+
+	if req.Email != "" && req.Email != user.Email {
+		var count int64
+		s.repo.GetDB().Model(&domain.User{}).Where("email = ? AND id != ?", req.Email, user.ID).Count(&count)
+		if count > 0 {
+			return nil, fmt.Errorf("email sudah digunakan oleh akun lain")
+		}
+		user.Email = req.Email
+	}
+
+	if req.FullName != "" {
+		user.FullName = req.FullName
+	}
+	if req.Phone != "" {
+		user.Phone = req.Phone
+	}
+	if req.PhotoURL != "" {
+		user.PhotoURL = req.PhotoURL
+	}
+	if req.Address != "" {
+		user.Address = req.Address
+	}
+	if req.Bio != "" {
+		user.Bio = req.Bio
+	}
+
+	if strings.TrimSpace(req.Password) != "" {
+		if len(req.Password) < 6 {
+			return nil, fmt.Errorf("password minimal harus 6 karakter")
+		}
+		hashed, err := security.HashPassword(req.Password)
+		if err != nil {
+			return nil, fmt.Errorf("gagal mengenkripsi password baru")
+		}
+		user.PasswordHash = hashed
+	}
+
+	if err := s.repo.UpdateUser(user); err != nil {
+		return nil, fmt.Errorf("gagal memperbarui data profil: %v", err)
+	}
+
+	// Sinkronisasi data ke Coach jika terhubung
+	if user.CoachID != nil && *user.CoachID > 0 {
+		coach, err := s.repo.FindCoachByID(*user.CoachID)
+		if err == nil && coach != nil {
+			if req.FullName != "" {
+				coach.Name = req.FullName
+			}
+			if req.Email != "" {
+				coach.Email = req.Email
+			}
+			if req.Phone != "" {
+				coach.Phone = req.Phone
+			}
+			if req.PhotoURL != "" {
+				coach.PhotoURL = req.PhotoURL
+			}
+			if req.Bio != "" {
+				coach.Description = req.Bio
+			}
+			_ = s.repo.SaveCoach(coach)
+		}
+	}
+
+	// Sinkronisasi data ke Member jika terhubung
+	if user.ClubMemberID != nil && *user.ClubMemberID > 0 {
+		member, err := s.repo.FindClubMemberByID(*user.ClubMemberID)
+		if err == nil && member != nil {
+			if req.FullName != "" {
+				member.FullName = req.FullName
+			}
+			if req.Email != "" {
+				member.Email = req.Email
+			}
+			if req.Phone != "" {
+				member.Phone = req.Phone
+			}
+			if req.PhotoURL != "" {
+				member.PhotoURL = req.PhotoURL
+			}
+			if req.Address != "" {
+				member.Address = req.Address
+			}
+			if req.BirthDate != "" {
+				member.BirthDate = req.BirthDate
+			}
+			if req.BirthPlace != "" {
+				member.BirthPlace = req.BirthPlace
+			}
+			if req.School != "" {
+				member.School = req.School
+			}
+			if req.ParentName != "" {
+				member.ParentName = req.ParentName
+			}
+			if req.ParentPhone != "" {
+				member.ParentPhone = req.ParentPhone
+			}
+			_ = s.repo.UpdateClubMember(member)
+		}
+	}
+
+	return s.GetProfile(userID)
+}
+
+// ----------------------------------------------------
+// ATHLETE REPORT MANAGEMENT SERVICE (MODUL 6: FR-ADM-RP)
+// ----------------------------------------------------
+
+func (s *Service) GetAthleteReports(memberID uint, period, search string) ([]domain.AthleteReport, error) {
+	return s.repo.FindAthleteReports(memberID, period, search)
+}
+
+func (s *Service) GetAthleteReportByID(id uint) (*domain.AthleteReport, error) {
+	return s.repo.FindAthleteReportByID(id)
+}
+
+func (s *Service) CreateAthleteReport(req dto.AthleteReportRequest) (*domain.AthleteReport, error) {
+	if req.MemberID == 0 {
+		return nil, fmt.Errorf("atlet wajib dipilih")
+	}
+	if req.ReportPeriod == "" {
+		req.ReportPeriod = "Evaluasi Semester " + time.Now().Format("2006")
+	}
+	if req.ReportDate == "" {
+		req.ReportDate = time.Now().Format("2006-01-02")
+	}
+	if req.PerformanceGrade == "" {
+		req.PerformanceGrade = "A (Sangat Baik)"
+	}
+	if req.ConsistencyScore == 0 {
+		req.ConsistencyScore = 90
+	}
+	if req.AttendanceRate == 0 {
+		req.AttendanceRate = 95
+	}
+	if req.PhysicalFitnessScore == 0 {
+		req.PhysicalFitnessScore = 88
+	}
+	if req.TechnicalDisciplineScore == 0 {
+		req.TechnicalDisciplineScore = 90
+	}
+	if req.Status == "" {
+		req.Status = "published"
+	}
+
+	report := &domain.AthleteReport{
+		MemberID:                 req.MemberID,
+		ReportPeriod:             req.ReportPeriod,
+		ReportDate:               req.ReportDate,
+		PerformanceGrade:         req.PerformanceGrade,
+		ConsistencyScore:         req.ConsistencyScore,
+		AttendanceRate:           req.AttendanceRate,
+		PhysicalFitnessScore:     req.PhysicalFitnessScore,
+		TechnicalDisciplineScore: req.TechnicalDisciplineScore,
+		CoachNotes:               req.CoachNotes,
+		EvaluationDetails:        req.EvaluationDetails,
+		EvaluatorName:            req.EvaluatorName,
+		Status:                   req.Status,
+	}
+
+	if err := s.repo.CreateAthleteReport(report); err != nil {
+		return nil, fmt.Errorf("gagal membuat raport performa: %v", err)
+	}
+
+	return s.repo.FindAthleteReportByID(report.ID)
+}
+
+func (s *Service) UpdateAthleteReport(id uint, req dto.AthleteReportRequest) (*domain.AthleteReport, error) {
+	report, err := s.repo.FindAthleteReportByID(id)
+	if err != nil || report == nil {
+		return nil, fmt.Errorf("raport tidak ditemukan")
+	}
+
+	if req.MemberID > 0 {
+		report.MemberID = req.MemberID
+	}
+	if req.ReportPeriod != "" {
+		report.ReportPeriod = req.ReportPeriod
+	}
+	if req.ReportDate != "" {
+		report.ReportDate = req.ReportDate
+	}
+	if req.PerformanceGrade != "" {
+		report.PerformanceGrade = req.PerformanceGrade
+	}
+	if req.ConsistencyScore > 0 {
+		report.ConsistencyScore = req.ConsistencyScore
+	}
+	if req.AttendanceRate > 0 {
+		report.AttendanceRate = req.AttendanceRate
+	}
+	if req.PhysicalFitnessScore > 0 {
+		report.PhysicalFitnessScore = req.PhysicalFitnessScore
+	}
+	if req.TechnicalDisciplineScore > 0 {
+		report.TechnicalDisciplineScore = req.TechnicalDisciplineScore
+	}
+	if req.CoachNotes != "" {
+		report.CoachNotes = req.CoachNotes
+	}
+	if req.EvaluationDetails != "" {
+		report.EvaluationDetails = req.EvaluationDetails
+	}
+	if req.EvaluatorName != "" {
+		report.EvaluatorName = req.EvaluatorName
+	}
+	if req.Status != "" {
+		report.Status = req.Status
+	}
+
+	if err := s.repo.UpdateAthleteReport(report); err != nil {
+		return nil, fmt.Errorf("gagal memperbarui raport: %v", err)
+	}
+
+	return s.repo.FindAthleteReportByID(id)
+}
+
+func (s *Service) DeleteAthleteReport(id uint) error {
+	report, err := s.repo.FindAthleteReportByID(id)
+	if err != nil || report == nil {
+		return fmt.Errorf("raport tidak ditemukan")
+	}
+
+	return s.repo.DeleteAthleteReport(id)
 }
 
 

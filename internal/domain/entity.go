@@ -24,6 +24,11 @@ type User struct {
 	Role         string    `gorm:"size:50;default:'Super Admin'" json:"role"`
 	CoachID      *uint     `gorm:"index" json:"coach_id,omitempty"`
 	ClubMemberID *uint     `gorm:"index" json:"club_member_id,omitempty"`
+	FullName     string    `gorm:"size:255" json:"full_name"`
+	Phone        string    `gorm:"size:50" json:"phone"`
+	PhotoURL     string    `gorm:"type:text" json:"photo_url"`
+	Address      string    `gorm:"type:text" json:"address"`
+	Bio          string    `gorm:"type:text" json:"bio"`
 	Status       string    `gorm:"size:20;default:'active'" json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -511,6 +516,26 @@ type FinanceTransaction struct {
 	RecordedBy      string    `gorm:"size:100" json:"recorded_by"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// AthleteReport represents an official periodic performance evaluation report card for a club athlete (FR-ADM-RP)
+type AthleteReport struct {
+	ID                       uint        `gorm:"primaryKey" json:"id"`
+	MemberID                 uint        `gorm:"index;not null" json:"member_id"`
+	Member                   *ClubMember `gorm:"foreignKey:MemberID" json:"member,omitempty"`
+	ReportPeriod             string      `gorm:"size:100;not null" json:"report_period"` // e.g. "Evaluasi Triwulan I 2026", "Semester 1 - 2026"
+	ReportDate               string      `gorm:"size:20;not null" json:"report_date"`   // YYYY-MM-DD
+	PerformanceGrade         string      `gorm:"size:50;default:'A (Sangat Baik)'" json:"performance_grade"`
+	ConsistencyScore         int         `gorm:"default:90" json:"consistency_score"`
+	AttendanceRate           int         `gorm:"default:95" json:"attendance_rate"`
+	PhysicalFitnessScore     int         `gorm:"default:88" json:"physical_fitness_score"`
+	TechnicalDisciplineScore int         `gorm:"default:90" json:"technical_discipline_score"`
+	CoachNotes               string      `gorm:"type:text" json:"coach_notes"`
+	EvaluationDetails        string      `gorm:"type:text" json:"evaluation_details"` // JSON array of stroke evaluations
+	EvaluatorName            string      `gorm:"size:150" json:"evaluator_name"`      // e.g. "Coach Raditya Pratama, S.Or."
+	Status                   string      `gorm:"size:20;default:'published'" json:"status"` // published, draft
+	CreatedAt                time.Time   `json:"created_at"`
+	UpdatedAt                time.Time   `json:"updated_at"`
 }
 
 

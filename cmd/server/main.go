@@ -193,6 +193,10 @@ func main() {
 	admin.Put("/users/:id", adminHandler.UpdateUser)
 	admin.Delete("/users/:id", adminHandler.DeleteUser)
 
+	// User Profile CMS (Modul 4: Portal Coach FR-PCH, Modul 5: Portal Atlet FR-ATL)
+	admin.Get("/profile/me", adminHandler.GetProfile)
+	admin.Put("/profile/me", adminHandler.UpdateProfile)
+
 	// MASC Club Members CMS
 	admin.Get("/club-members", adminHandler.GetClubMembers)
 	admin.Get("/club-members/:id", adminHandler.GetClubMemberByID)
@@ -241,6 +245,13 @@ func main() {
 	admin.Post("/finance/transactions", adminHandler.CreateFinanceTransaction)
 	admin.Put("/finance/transactions/:id", adminHandler.UpdateFinanceTransaction)
 	admin.Delete("/finance/transactions/:id", adminHandler.DeleteFinanceTransaction)
+
+	// Athlete Performance Report CMS (Modul 6: FR-ADM-RP-01, FR-ADM-RP-02, FR-ADM-RP-03)
+	admin.Get("/athlete-reports", adminHandler.GetAthleteReports)
+	admin.Get("/athlete-reports/:id", adminHandler.GetAthleteReportByID)
+	admin.Post("/athlete-reports", adminHandler.CreateAthleteReport)
+	admin.Put("/athlete-reports/:id", adminHandler.UpdateAthleteReport)
+	admin.Delete("/athlete-reports/:id", adminHandler.DeleteAthleteReport)
 
 	log.Printf("Swimming Event API starting on port :%s in %s mode...", cfg.Port, cfg.AppEnv)
 	if err := app.Listen(":" + cfg.Port); err != nil {

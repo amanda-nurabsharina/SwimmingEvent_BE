@@ -1601,6 +1601,151 @@ func (h *AdminHandler) DeleteFinanceTransaction(c *fiber.Ctx) error {
 	return response.Success(c, fiber.StatusOK, "Transaksi kas berhasil dihapus", nil)
 }
 
+// ----------------------------------------------------
+// USER PROFILE HANDLERS (MODUL PROFILE & PORTAL COACH / ATLET)
+// ----------------------------------------------------
+
+func (h *AdminHandler) GetProfile(c *fiber.Ctx) error {
+	userIDVal := c.Locals("user_id")
+	if userIDVal == nil {
+		return response.Error(c, fiber.StatusUnauthorized, "User tidak terautentikasi", nil)
+	}
+
+	var userID uint
+	switch v := userIDVal.(type) {
+	case uint:
+		userID = v
+	case float64:
+		userID = uint(v)
+	case int:
+		userID = uint(v)
+	default:
+		return response.Error(c, fiber.StatusUnauthorized, "ID user tidak valid", nil)
+	}
+
+	profile, err := h.svc.GetProfile(userID)
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Profil berhasil dimuat", profile)
+}
+
+func (h *AdminHandler) UpdateProfile(c *fiber.Ctx) error {
+	userIDVal := c.Locals("user_id")
+	if userIDVal == nil {
+		return response.Error(c, fiber.StatusUnauthorized, "User tidak terautentikasi", nil)
+	}
+
+	var userID uint
+	switch v := userIDVal.(type) {
+	case uint:
+		userID = v
+	case float64:
+		userID = uint(v)
+	case int:
+		userID = uint(v)
+	default:
+		return response.Error(c, fiber.StatusUnauthorized, "ID user tidak valid", nil)
+	}
+
+	var req dto.UpdateProfileRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Data profil tidak valid", err.Error())
+	}
+
+	profile, err := h.svc.UpdateProfile(userID, req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Profil berhasil diperbarui", profile)
+}
+
+// ----------------------------------------------------
+// ATHLETE REPORT HANDLERS (MODUL 6: FR-ADM-RP)
+// ----------------------------------------------------
+
+func (h *AdminHandler) GetAthleteReports(c *fiber.Ctx) error {
+	memberIDStr := c.Query("member_id")
+	var memberID uint
+	if memberIDStr != "" {
+		if id, err := strconv.Atoi(memberIDStr); err == nil && id > 0 {
+			memberID = uint(id)
+		}
+	}
+
+	period := c.Query("period")
+	search := c.Query("search")
+
+	reports, err := h.svc.GetAthleteReports(memberID, period, search)
+	if err != nil {
+		return response.Error(c, fiber.StatusInternalServerError, "Gagal mengambil data raport atlet", err.Error())
+	}
+
+	return response.Success(c, fiber.StatusOK, "Data raport atlet berhasil diambil", reports)
+}
+
+func (h *AdminHandler) GetAthleteReportByID(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil || id <= 0 {
+		return response.Error(c, fiber.StatusBadRequest, "ID raport tidak valid", nil)
+	}
+
+	report, err := h.svc.GetAthleteReportByID(uint(id))
+	if err != nil || report == nil {
+		return response.Error(c, fiber.StatusNotFound, "Raport tidak ditemukan", nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Detail raport berhasil diambil", report)
+}
+
+func (h *AdminHandler) CreateAthleteReport(c *fiber.Ctx) error {
+	var req dto.AthleteReportRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Format data raport tidak valid", err.Error())
+	}
+
+	report, err := h.svc.CreateAthleteReport(req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusCreated, "Raport atlet berhasil dibuat", report)
+}
+
+func (h *AdminHandler) UpdateAthleteReport(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil || id <= 0 {
+		return response.Error(c, fiber.StatusBadRequest, "ID raport tidak valid", nil)
+	}
+
+	var req dto.AthleteReportRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, "Format data raport tidak valid", err.Error())
+	}
+
+	report, err := h.svc.UpdateAthleteReport(uint(id), req)
+	if err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Raport atlet berhasil diperbarui", report)
+}
+
+func (h *AdminHandler) DeleteAthleteReport(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil || id <= 0 {
+		return response.Error(c, fiber.StatusBadRequest, "ID raport tidak valid", nil)
+	}
+
+	if err := h.svc.DeleteAthleteReport(uint(id)); err != nil {
+		return response.Error(c, fiber.StatusBadRequest, err.Error(), nil)
+	}
+
+	return response.Success(c, fiber.StatusOK, "Raport atlet berhasil dihapus", nil)
+}
+
 
 
 

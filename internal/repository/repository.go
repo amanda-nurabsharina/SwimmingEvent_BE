@@ -21,6 +21,10 @@ func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
+func (r *Repository) GetDB() *gorm.DB {
+	return r.db
+}
+
 func (r *Repository) AutoMigrate() error {
 	// Drop old unique index on registration_code if present, and recreate as regular index to support multiple events per swimmer order
 	_ = r.db.Exec("DROP INDEX IF EXISTS idx_registrations_registration_code").Error
@@ -60,6 +64,7 @@ func (r *Repository) AutoMigrate() error {
 		&domain.TimeTrialLane{},
 		&domain.CoachPayroll{},
 		&domain.FinanceTransaction{},
+		&domain.AthleteReport{},
 	)
 	if err != nil {
 		return err
@@ -1335,6 +1340,15 @@ func (r *Repository) FindCoachByID(id uint) (*domain.Coach, error) {
 	return &coach, nil
 }
 
+func (r *Repository) FindCoachByUserID(userID uint) (*domain.Coach, error) {
+	var coach domain.Coach
+	err := r.db.Preload("User").Where("user_id = ?", userID).First(&coach).Error
+	if err != nil {
+		return nil, err
+	}
+	return &coach, nil
+}
+
 func (r *Repository) SaveCoach(c *domain.Coach) error {
 	if c.ID > 0 {
 		return r.db.Save(c).Error
@@ -1766,6 +1780,15 @@ func (r *Repository) FindClubMemberByID(id uint) (*domain.ClubMember, error) {
 	return &member, nil
 }
 
+func (r *Repository) FindClubMemberByUserID(userID uint) (*domain.ClubMember, error) {
+	var member domain.ClubMember
+	err := r.db.Preload("User").Where("user_id = ?", userID).First(&member).Error
+	if err != nil {
+		return nil, err
+	}
+	return &member, nil
+}
+
 func (r *Repository) CreateClubMember(m *domain.ClubMember) error {
 	return r.db.Create(m).Error
 }
@@ -1961,7 +1984,7 @@ func (r *Repository) UpdateTimeTrialLane(laneID uint, memberID *uint, entryID *u
 }
 
 // Helper to convert mm.ss.ms to milliseconds for accurate speed ranking
-func parseSpeedToMs(t string) int {
+func ParseSpeedToMs(t string) int {
 	clean := strings.TrimSpace(t)
 	if clean == "" || clean == "-" || strings.ToUpper(clean) == "NT" {
 		return 999999999
@@ -1987,6 +2010,10 @@ func parseSpeedToMs(t string) int {
 		return (s * 1000) + ms
 	}
 	return 999999999
+}
+
+func parseSpeedToMs(t string) int {
+	return ParseSpeedToMs(t)
 }
 
 func (r *Repository) CalculateTimeTrialRanks(sessionID uint, strokeID uint) error {
@@ -2173,6 +2200,60 @@ func (r *Repository) GetFinanceSummary() (income, expense, net float64, totalTx 
 	expense = outSum.Total
 	net = income - expense
 	return income, expense, net, totalTx, nil
+}
+
+// ----------------------------------------------------
+// ATHLETE REPORT MANAGEMENT REPOSITORY (FR-ADM-RP)
+// ----------------------------------------------------
+
+func (r *Repository) FindAthleteReports(memberID uint, period string, search string) ([]domain.AthleteReport, error) {
+	var reports []domain.AthleteReport
+	query := r.db.Preload("Member").Order("report_date DESC, id DESC")
+
+	if memberID > 0 {
+		query = query.Where("member_id = ?", memberID)
+	}
+	if period != "" {
+		query = query.Where("report_period = ?", period)
+	}
+	if search != "" {
+		s := "%" + strings.ToLower(search) + "%"
+		query = query.Joins("LEFT JOIN club_members ON club_members.id = athlete_reports.member_id").
+			Where("LOWER(athlete_reports.report_period) LIKE ? OR LOWER(athlete_reports.coach_notes) LIKE ? OR LOWER(club_members.full_name) LIKE ? OR LOWER(club_members.member_number) LIKE ?", s, s, s, s)
+	}
+
+	err := query.Find(&reports).Error
+	return reports, err
+}
+
+func (r *Repository) FindAthleteReportByID(id uint) (*domain.AthleteReport, error) {
+	var report domain.AthleteReport
+	err := r.db.Preload("Member").First(&report, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &report, nil
+}
+
+func (r *Repository) FindLatestAthleteReportByMemberID(memberID uint) (*domain.AthleteReport, error) {
+	var report domain.AthleteReport
+	err := r.db.Preload("Member").Where("member_id = ? AND status = ?", memberID, "published").Order("report_date DESC, id DESC").First(&report).Error
+	if err != nil {
+		return nil, err
+	}
+	return &report, nil
+}
+
+func (r *Repository) CreateAthleteReport(report *domain.AthleteReport) error {
+	return r.db.Create(report).Error
+}
+
+func (r *Repository) UpdateAthleteReport(report *domain.AthleteReport) error {
+	return r.db.Save(report).Error
+}
+
+func (r *Repository) DeleteAthleteReport(id uint) error {
+	return r.db.Delete(&domain.AthleteReport{}, id).Error
 }
 
 

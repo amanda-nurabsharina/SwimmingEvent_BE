@@ -1,5 +1,7 @@
 package dto
 
+import "serve-swimming-be/internal/domain"
+
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
@@ -11,12 +13,17 @@ type LoginResponse struct {
 }
 
 type UserSummary struct {
-	ID          uint     `json:"id"`
-	Username    string   `json:"username"`
-	Email       string   `json:"email"`
-	Role        string   `json:"role"`
-	RoleID      *uint    `json:"role_id,omitempty"`
-	Permissions []string `json:"permissions,omitempty"`
+	ID           uint     `json:"id"`
+	Username     string   `json:"username"`
+	Email        string   `json:"email"`
+	Role         string   `json:"role"`
+	RoleID       *uint    `json:"role_id,omitempty"`
+	CoachID      *uint    `json:"coach_id,omitempty"`
+	ClubMemberID *uint    `json:"club_member_id,omitempty"`
+	FullName     string   `json:"full_name,omitempty"`
+	Phone        string   `json:"phone,omitempty"`
+	PhotoURL     string   `json:"photo_url,omitempty"`
+	Permissions  []string `json:"permissions,omitempty"`
 }
 
 type RoleRequest struct {
@@ -60,9 +67,89 @@ type UserDetailResponse struct {
 	Role         *RoleResponse `json:"role,omitempty"`
 	CoachID      *uint         `json:"coach_id,omitempty"`
 	ClubMemberID *uint         `json:"club_member_id,omitempty"`
+	FullName     string        `json:"full_name"`
+	Phone        string        `json:"phone"`
+	PhotoURL     string        `json:"photo_url"`
+	Address      string        `json:"address"`
+	Bio          string        `json:"bio"`
 	Status       string        `json:"status"`
 	CreatedAt    string        `json:"created_at"`
 	UpdatedAt    string        `json:"updated_at"`
+}
+
+type UpdateProfileRequest struct {
+	FullName    string `json:"full_name"`
+	Email       string `json:"email"`
+	Phone       string `json:"phone"`
+	Address     string `json:"address"`
+	Bio         string `json:"bio"`
+	PhotoURL    string `json:"photo_url"`
+	Password    string `json:"password,omitempty"`
+	BirthDate   string `json:"birth_date,omitempty"`
+	BirthPlace  string `json:"birth_place,omitempty"`
+	School      string `json:"school,omitempty"`
+	ParentName  string `json:"parent_name,omitempty"`
+	ParentPhone string `json:"parent_phone,omitempty"`
+}
+
+type MemberBestScore struct {
+	StrokeName string `json:"stroke_name"`
+	Distance   string `json:"distance"`
+	BestTime   string `json:"best_time"`
+	Date       string `json:"date"`
+	Session    string `json:"session"`
+}
+
+type MemberReportCard struct {
+	ID                       uint              `json:"id,omitempty"`
+	MemberNumber             string            `json:"member_number"`
+	FullName                 string            `json:"full_name"`
+	Nickname                 string            `json:"nickname"`
+	BirthDate                string            `json:"birth_date"`
+	AgeGroup                 string            `json:"age_group"`
+	School                   string            `json:"school"`
+	PhotoURL                 string            `json:"photo_url"`
+	ReportPeriod             string            `json:"report_period,omitempty"`
+	ReportDate               string            `json:"report_date,omitempty"`
+	TotalSessions            int               `json:"total_sessions"`
+	TotalTimeTrials          int               `json:"total_time_trials"`
+	PerformanceGrade         string            `json:"performance_grade"`
+	ConsistencyScore         int               `json:"consistency_score"`
+	AttendanceRate           int               `json:"attendance_rate,omitempty"`
+	PhysicalFitnessScore     int               `json:"physical_fitness_score,omitempty"`
+	TechnicalDisciplineScore int               `json:"technical_discipline_score,omitempty"`
+	CoachNotes               string            `json:"coach_notes"`
+	EvaluationDetails        string            `json:"evaluation_details,omitempty"`
+	EvaluatorName            string            `json:"evaluator_name,omitempty"`
+	BestScores               []MemberBestScore `json:"best_scores"`
+}
+
+type AthleteReportRequest struct {
+	MemberID                 uint   `json:"member_id"`
+	ReportPeriod             string `json:"report_period"`
+	ReportDate               string `json:"report_date"`
+	PerformanceGrade         string `json:"performance_grade"`
+	ConsistencyScore         int    `json:"consistency_score"`
+	AttendanceRate           int    `json:"attendance_rate"`
+	PhysicalFitnessScore     int    `json:"physical_fitness_score"`
+	TechnicalDisciplineScore int    `json:"technical_discipline_score"`
+	CoachNotes               string `json:"coach_notes"`
+	EvaluationDetails        string `json:"evaluation_details"`
+	EvaluatorName            string `json:"evaluator_name"`
+	Status                   string `json:"status"`
+}
+
+type ProfileResponse struct {
+	User             UserDetailResponse        `json:"user"`
+	Role             string                    `json:"role"`
+	CoachData        *domain.Coach             `json:"coach_data,omitempty"`
+	MemberData       *domain.ClubMember        `json:"member_data,omitempty"`
+	CoachPayrolls    []domain.CoachPayroll     `json:"coach_payrolls,omitempty"`
+	CoachAthletes    []domain.ClubMember       `json:"coach_athletes,omitempty"`
+	MemberSessions   []domain.TimeTrialSession `json:"member_sessions,omitempty"`
+	MemberHistory    []domain.TimeTrialLane    `json:"member_history,omitempty"`
+	MemberBestScores []MemberBestScore         `json:"member_best_scores,omitempty"`
+	MemberReport     *MemberReportCard         `json:"member_report,omitempty"`
 }
 
 type CreateCoachUserRequest struct {
